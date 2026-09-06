@@ -49,6 +49,10 @@ Validate the installation and GPU exposure:
 ./igenvs-ultra doctor
 ```
 
+See the [complete CLI reference](docs/CLI.md) for every command, accepted
+value, default, and concise description, organized by docking, SMILES
+generation, fitting, and screening.
+
 `auto` execution prefers complete local Apptainer images when present, then
 the two Docker images above, then a native installation. Pass
 `--execution docker` to require Docker explicitly.
@@ -138,6 +142,7 @@ docker run --rm --gpus all \
 iGenVS/                 docking/generation source and AMD64 Dockerfile
 gMolAI-v2.0/            released encoder source/models and AMD64 Dockerfile
 user-pipeline/          portable orchestration CLI
+docs/                   CLI reference and performance engineering notes
 examples/4ag8-screen/   compact ready-to-screen example target head
 complexes/              small docking examples
 speed-bench/            frozen benchmark protocol, scripts, and report

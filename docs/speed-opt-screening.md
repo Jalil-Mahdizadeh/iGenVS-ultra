@@ -122,7 +122,7 @@ globally unique iGen3 rate, not spend tens of minutes starting encoders.
 ## What the current measurements say
 
 The locked 10-million-molecule results are in
-[`speed-bench/REPORT.md`](speed-bench/REPORT.md). The four-GH200 run measured:
+[`speed-bench/REPORT.md`](../speed-bench/REPORT.md). The four-GH200 run measured:
 
 | Quantity | Current result |
 |---|---:|
@@ -166,13 +166,13 @@ The current run is not measuring intrinsic model limits:
 
 The source confirms the boundaries:
 
-- [`generation.py`](iGenVS/iGen3/src/igen3/generation.py) allocates KV caches
+- [`generation.py`](../iGenVS/iGen3/src/igen3/generation.py) allocates KV caches
   per batch, synchronously decodes, canonicalizes and writes each result, and
   checks `bool(finished.all())` from the host inside the token loop.
-- [`workflow.py`](user-pipeline/src/igenvs_ultra/workflow.py) launches fresh
+- [`workflow.py`](../user-pipeline/src/igenvs_ultra/workflow.py) launches fresh
   generation, validation, and score commands and serializes several CSV
   representations per outer batch.
-- [`model_ops.py`](user-pipeline/src/igenvs_ultra/model_ops.py) starts its
+- [`model_ops.py`](../user-pipeline/src/igenvs_ultra/model_ops.py) starts its
   reported encoder timer before artifact verification, model loading, CSV
   parsing, and policy-worker creation. It then closes the encoder and empties
   CUDA before loading and executing the heads.
@@ -190,8 +190,8 @@ end-to-end metric:
 The iGen3 result is documented in the
 [`iGen3` benchmark](https://github.com/Jalil-Mahdizadeh/iGen3/tree/main/benchmarks/latest),
 and the gMolAI result and timing boundary are documented in
-[`extra-benchmark/speed/RESULTS.md`](gMolAI-v2.0/extra-benchmark/speed/RESULTS.md)
-and [`PROTOCOL.md`](gMolAI-v2.0/extra-benchmark/speed/PROTOCOL.md).
+[`extra-benchmark/speed/RESULTS.md`](https://github.com/Jalil-Mahdizadeh/gMolAI-v2.0/blob/main/extra-benchmark/speed/RESULTS.md)
+and [`PROTOCOL.md`](https://github.com/Jalil-Mahdizadeh/gMolAI-v2.0/blob/main/extra-benchmark/speed/PROTOCOL.md).
 These rates are not directly interchangeable, but they prove that the current
 ultra rates are dominated by orchestration rather than the frozen models.
 
