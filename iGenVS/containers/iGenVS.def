@@ -1,0 +1,126 @@
+Bootstrap: docker
+From: nvidia/cuda:12.8.0-devel-ubuntu22.04
+Stage: build
+
+%files
+    third_party/Uni-Dock/unidock /src/unidock
+    third_party/AutoDock-GPU /src/autodock-gpu
+    third_party/AutoGrid /src/autogrid
+    containers/patches/unidock-1.2.0-respect-max-gpu-memory.patch /src/unidock.patch
+    containers/patches/unidock-1.2.0-scores-only-output.patch /src/unidock-scores.patch
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends ca-certificates cmake g++ git make meson ninja-build patch tcsh libboost-system-dev libboost-thread-dev libboost-serialization-dev libboost-filesystem-dev libboost-program-options-dev libboost-timer-dev libgomp1
+    patch -d /src/unidock -p1 < /src/unidock.patch
+    patch -l -d /src/unidock -p1 < /src/unidock-scores.patch
+    cmake -S /src/unidock -B /tmp/unidock-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=90 -DCMAKE_INSTALL_PREFIX=/opt/unidock
+    cmake --build /tmp/unidock-build --target unidock --parallel 8
+    cmake --install /tmp/unidock-build --component Unspecified
+    strip /opt/unidock/bin/unidock
+    meson setup /src/autogrid/builddir /src/autogrid --prefix=/opt/autogrid --buildtype=release
+    meson compile -C /src/autogrid/builddir
+    meson install -C /src/autogrid/builddir
+    mkdir -p /opt/autodock-gpu/bin
+    cd /src/autodock-gpu
+    export GPU_INCLUDE_PATH=/usr/local/cuda/include
+    export GPU_LIBRARY_PATH=/usr/local/cuda/lib64
+    make DEVICE=CUDA NUMWI=64 TARGETS=90 OVERLAP=ON odock
+    cp bin/autodock_gpu_64wi /opt/autodock-gpu/bin/
+    make DEVICE=CUDA NUMWI=128 TARGETS=90 OVERLAP=ON odock
+    cp bin/autodock_gpu_128wi /opt/autodock-gpu/bin/
+    make DEVICE=CUDA NUMWI=256 TARGETS=90 OVERLAP=ON odock
+    cp bin/autodock_gpu_256wi /opt/autodock-gpu/bin/
+    strip /opt/autodock-gpu/bin/autodock_gpu_*wi
+    ln -s autodock_gpu_64wi /opt/autodock-gpu/bin/autodock_gpu
+
+
+Bootstrap: docker
+From: nvidia/cuda:12.8.0-runtime-ubuntu22.04
+Stage: final
+
+%files from build
+    /opt/unidock /opt/unidock
+    /opt/autodock-gpu /opt/autodock-gpu
+    /opt/autogrid /opt/autogrid
+
+%files
+    pyproject.toml /opt/igenvs/pyproject.toml
+    README.md /opt/igenvs/README.md
+    src /opt/igenvs/src
+    tests /opt/igenvs/tests
+    examples /opt/igenvs/examples
+    iGen3/pyproject.toml /opt/iGen3/pyproject.toml
+    iGen3/README.md /opt/iGen3/README.md
+    iGen3/requirements.txt /opt/iGen3/requirements.txt
+    iGen3/src /opt/iGen3/src
+    iGen3/models /opt/iGen3/models
+    iGen3/examples /opt/iGen3/examples
+    third_party/Uni-Dock/LICENSE /opt/licenses/Uni-Dock-LICENSE
+    third_party/AutoDock-GPU/LICENSE /opt/licenses/AutoDock-GPU-GPL-2.0
+    third_party/AutoDock-GPU/LICENSE_LGPL /opt/licenses/AutoDock-GPU-LGPL-2.1
+    third_party/AutoGrid/COPYING /opt/licenses/AutoGrid-GPL-2.0
+    third_party/Uni-Dock/unidock/test /opt/unidock-tests
+    third_party/AutoDock-GPU/input /opt/autodock-gpu-tests
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    export PIP_NO_CACHE_DIR=1
+    apt-get update
+    apt-get install -y --no-install-recommends ca-certificates libboost-filesystem1.74.0 libboost-program-options1.74.0 libboost-serialization1.74.0 libboost-system1.74.0 libboost-thread1.74.0 libboost-timer1.74.0 libgomp1 openbabel python3 python3-dev python3-pip
+    python3 -m pip install --upgrade pip setuptools wheel
+    python3 -m pip install torch==2.11.0+cu128 --index-url https://download.pytorch.org/whl/cu128 --extra-index-url https://pypi.org/simple
+    python3 -m pip install gemmi==0.7.3 meeko==0.8.0 numpy==2.2.6 pandas==2.3.2 rdkit==2025.9.2 scipy==1.15.3 tqdm==4.67.1 matplotlib==3.10.5 pytest==8.4.2
+    python3 -m pip install --no-deps /opt/iGen3
+    python3 -m pip install --no-deps /opt/igenvs
+    apt-get clean
+    rm -rf /var/lib/apt/lists/* /root/.cache/pip
+
+%environment
+    export PATH=/opt/unidock/bin:/opt/autodock-gpu/bin:/opt/autogrid/bin:$PATH
+    export IGEN3_MODEL_DIR=/opt/iGen3/models
+    export PYTHONUNBUFFERED=1
+    export TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor
+    export MPLCONFIGDIR=/tmp/matplotlib
+
+%runscript
+    exec igenvs "$@"
+
+%test
+    export PATH=/opt/unidock/bin:/opt/autodock-gpu/bin:/opt/autogrid/bin:$PATH
+    export IGEN3_MODEL_DIR=/opt/iGen3/models
+    unidock --version
+    unidock --help_advanced | grep -q scores_only_output
+    autodock_gpu --help >/dev/null
+    readlink -f "$(command -v autodock_gpu)" | grep -q autodock_gpu_64wi
+    autogrid4 -h >/dev/null
+    igenvs --version
+    igenvs prepare-target --help >/dev/null
+    igenvs screen --help | grep -q -- --target
+    igenvs screen --help | grep -q -- --engine
+    igen3 list-models
+    python3 -c "import igenvs, igen3, torch, rdkit, meeko; assert len(igen3.MODEL_SPECS) == 4"
+
+%labels
+    org.opencontainers.image.title iGenVS
+    org.opencontainers.image.version 0.2.0
+    org.opencontainers.image.source https://github.com/Jalil-Mahdizadeh/iGenVS
+    org.opencontainers.image.description "iGen3 + RDKit/Meeko + Uni-Dock 1.2.0 + AutoDock-GPU 1.6 virtual screening"
+    igenvs.unidock.version 1.2.0
+    igenvs.unidock.commit 95e409172b15dec0989aea70b0f2328e8ca52025
+    igenvs.unidock.patch "respect-max-gpu-memory,scores-only-output"
+    igenvs.autodock-gpu.version 1.6
+    igenvs.autodock-gpu.commit e63e6f6280ebfad18caa3e8f48afdc269e79e063
+    igenvs.autodock-gpu.work-items "64,128,256"
+    igenvs.autodock-gpu.default-work-items 64
+    igenvs.autogrid.version 4.2.9
+    igenvs.autogrid.commit 6d2847beaeac8ff43ca99094707fd74e3ca1ff37
+    igenvs.cuda.architecture sm_90
+    igenvs.igen3.models "base-isomeric,base-nonisomeric,rl-isomeric,rl-nonisomeric"
+
+%help
+    Run: apptainer run --nv iGenVS.SIF --help
+    Check: apptainer exec --nv iGenVS.SIF igenvs doctor
+    Engines: --engine unidock (default) or --engine autodock-gpu.
+    All four iGen3 checkpoints are embedded under /opt/iGen3/models.

@@ -1,0 +1,48 @@
+schema_version: 1
+
+model:
+  architecture: masked_graph_vicreg
+  hidden_dim: 256
+  node_latent_dim: 128
+  graph_latent_dim: 256
+  gine_layers: 4
+  dropout: 0.10
+  vicreg_projector: true
+  vicreg_projector_dim: 256
+
+objective:
+  node_mask_probability: 0.30
+  bond_feature_mask_probability: 0.30
+  bond_dropout_probability: 0.15
+  easy_negative_ratio: 1.0
+  hard_negative_ratio: 1.0
+  hard_pool_ratio: 5.0
+  node_weight: 1.0
+  edge_existence_weight: 0.5
+  edge_feature_weight: 1.0
+  descriptor_weight: 0.50
+  invariance_weight: 0.0
+  variance_weight: 0.0
+  covariance_weight: 0.0
+  contrastive_space: projector
+  contrastive_weight: 0.005
+  contrastive_temperature: 0.1
+  variance_target: 1.0
+  minimum_effective_rank_ratio: 0.05
+  collapse_penalty_weight: 10.0
+
+training:
+  max_steps: 15000
+  learning_rate: 0.0003
+  min_learning_rate: 0.000003
+  warmup_steps: 1000
+  weight_decay: 0.01
+  gradient_clip_norm: 1.0
+  precision: bf16
+  checkpoint_every_steps: 500
+  retain_every_steps: 2500
+  validate_every_steps: 2500
+  log_every_steps: 20
+  validation_max_graphs: 50000
+  test_max_graphs: 250000
+  resume: auto

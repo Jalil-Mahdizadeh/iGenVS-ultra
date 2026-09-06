@@ -1,0 +1,443 @@
+{
+  "created_at": "2026-09-06T14:54:11.658749+00:00",
+  "generation": {
+    "batch_size": "auto",
+    "mode": "de-novo",
+    "model": "base-isomeric",
+    "requested": 80000,
+    "seconds": 55.81793823803309,
+    "seed": 2026090601,
+    "temperature": 1.0,
+    "top_k": 64
+  },
+  "hardware": {
+    "captured_at": "2026-09-06T14:54:11.789814+00:00",
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71
+    ],
+    "gpus": [
+      "0, GPU-1597fb44-9f85-004c-2548-3d71f3b178f7, NVIDIA GH200 120GB, 97871, 580.159.04, P0, 1980, 900.00"
+    ],
+    "hostname": "n191",
+    "kernel": "5.14.0-687.42.1.el9_8.aarch64",
+    "lscpu": {
+      "lscpu": [
+        {
+          "data": "aarch64",
+          "field": "Architecture:"
+        },
+        {
+          "data": "64-bit",
+          "field": "CPU op-mode(s):"
+        },
+        {
+          "data": "Little Endian",
+          "field": "Byte Order:"
+        },
+        {
+          "data": "288",
+          "field": "CPU(s):"
+        },
+        {
+          "data": "0-287",
+          "field": "On-line CPU(s) list:"
+        },
+        {
+          "data": "ARM",
+          "field": "Vendor ID:"
+        },
+        {
+          "data": "Neoverse-V2",
+          "field": "Model name:"
+        },
+        {
+          "data": "0",
+          "field": "Model:"
+        },
+        {
+          "data": "1",
+          "field": "Thread(s) per core:"
+        },
+        {
+          "data": "72",
+          "field": "Core(s) per socket:"
+        },
+        {
+          "data": "4",
+          "field": "Socket(s):"
+        },
+        {
+          "data": "r0p0",
+          "field": "Stepping:"
+        },
+        {
+          "data": "disabled",
+          "field": "Frequency boost:"
+        },
+        {
+          "data": "100%",
+          "field": "CPU(s) scaling MHz:"
+        },
+        {
+          "data": "3402.0000",
+          "field": "CPU max MHz:"
+        },
+        {
+          "data": "81.0000",
+          "field": "CPU min MHz:"
+        },
+        {
+          "data": "2000.00",
+          "field": "BogoMIPS:"
+        },
+        {
+          "data": "fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb dcpodp sve2 sveaes svepmull svebitperm svesha3 svesm4 flagm2 frint svei8mm svebf16 i8mm bf16 dgh",
+          "field": "Flags:"
+        },
+        {
+          "data": "18 MiB (288 instances)",
+          "field": "L1d cache:"
+        },
+        {
+          "data": "18 MiB (288 instances)",
+          "field": "L1i cache:"
+        },
+        {
+          "data": "288 MiB (288 instances)",
+          "field": "L2 cache:"
+        },
+        {
+          "data": "456 MiB (4 instances)",
+          "field": "L3 cache:"
+        },
+        {
+          "data": "36",
+          "field": "NUMA node(s):"
+        },
+        {
+          "data": "0-71",
+          "field": "NUMA node0 CPU(s):"
+        },
+        {
+          "data": "72-143",
+          "field": "NUMA node1 CPU(s):"
+        },
+        {
+          "data": "144-215",
+          "field": "NUMA node2 CPU(s):"
+        },
+        {
+          "data": "216-287",
+          "field": "NUMA node3 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node4 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node5 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node6 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node7 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node8 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node9 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node10 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node11 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node12 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node13 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node14 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node15 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node16 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node17 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node18 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node19 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node20 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node21 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node22 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node23 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node24 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node25 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node26 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node27 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node28 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node29 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node30 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node31 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node32 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node33 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node34 CPU(s):"
+        },
+        {
+          "data": null,
+          "field": "NUMA node35 CPU(s):"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Gather data sampling:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Indirect target selection:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Itlb multihit:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability L1tf:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Mds:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Meltdown:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Mmio stale data:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Old microcode:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Reg file data sampling:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Retbleed:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Spec rstack overflow:"
+        },
+        {
+          "data": "Mitigation; Speculative Store Bypass disabled via prctl",
+          "field": "Vulnerability Spec store bypass:"
+        },
+        {
+          "data": "Mitigation; __user pointer sanitization",
+          "field": "Vulnerability Spectre v1:"
+        },
+        {
+          "data": "Mitigation; CSV2, BHB",
+          "field": "Vulnerability Spectre v2:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Srbds:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Tsa:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Tsx async abort:"
+        },
+        {
+          "data": "Not affected",
+          "field": "Vulnerability Vmscape:"
+        }
+      ]
+    },
+    "machine": "aarch64",
+    "slurm": {
+      "CUDA_VISIBLE_DEVICES": "0",
+      "SLURM_CPUS_PER_TASK": null,
+      "SLURM_GPUS_ON_NODE": "1",
+      "SLURM_JOB_GPUS": null,
+      "SLURM_JOB_ID": "2071150",
+      "SLURM_JOB_NAME": "jobsh-disrsulb"
+    }
+  },
+  "libraries": {
+    "20000": {
+      "path": "speed-bench/inputs/fixed-20k.csv",
+      "rows": 20000,
+      "sha256": "501e2d36c62467530c6242828a19f6d37566b805bea9ea978460d56e34d52615"
+    },
+    "40000": {
+      "path": "speed-bench/inputs/fixed-40k.csv",
+      "rows": 40000,
+      "sha256": "76e2ea6aeca8dfd9be1f0de30149dddccda8d2225100a7abeb562058c019f613"
+    },
+    "80000": {
+      "path": "speed-bench/inputs/fixed-80k.csv",
+      "rows": 80000,
+      "sha256": "c33f286563d33aee0c9a0da962f63a6fc16245a644e16ac39a305bb0c205a056"
+    }
+  },
+  "raw_generation_sha256": "94ee7bcc4dd47a9d11a05fa90742616dc2a6fa4eb4c8311b840e98bc6016a8db",
+  "relationship": "nested prefixes of one generated canonical exact-deduplicated fixture",
+  "schema_version": 1,
+  "status": "complete",
+  "validation": {
+    "deduplicate": true,
+    "fragment_policy": "reject",
+    "seconds": 2.4705035720253363,
+    "workers": "auto"
+  }
+}

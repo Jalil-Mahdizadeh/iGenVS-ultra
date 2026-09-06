@@ -1,0 +1,63 @@
+{
+  "aggregate_successful_per_second_manifest_span": 189.98046871862547,
+  "aggregate_successful_per_second_slurm_wall": 185.47319347319348,
+  "scaling_vs_single_standard": 2.1569578673975287,
+  "shards": [
+    {
+      "docking_failed": 98,
+      "docking_seconds": 293.4797132579988,
+      "elapsed_seconds": 336.3972848830017,
+      "gpu_uuid": "GPU-3225b8b9-3482-d51c-f546-9eda84c59af5",
+      "preparation_failed": 12,
+      "preparation_wait_seconds": 26.222978852994856,
+      "prepared": 19988,
+      "rate_end_to_end": 59.12651764391529,
+      "shard": "shard-0",
+      "successful": 19890,
+      "validation_seconds": 1.5758826009987388
+    },
+    {
+      "docking_failed": 90,
+      "docking_seconds": 279.4270204289933,
+      "elapsed_seconds": 332.3999966580013,
+      "gpu_uuid": "GPU-1542024c-5aed-929f-8225-a6c8460eee51",
+      "preparation_failed": 8,
+      "preparation_wait_seconds": 37.698746169990045,
+      "prepared": 19992,
+      "rate_end_to_end": 59.873646811364765,
+      "shard": "shard-1",
+      "successful": 19902,
+      "validation_seconds": 1.6609289700136287
+    },
+    {
+      "docking_failed": 101,
+      "docking_seconds": 369.8756011910009,
+      "elapsed_seconds": 418.8220006860065,
+      "gpu_uuid": "GPU-4667d033-c4ad-bf45-7f2c-9be112c92e73",
+      "preparation_failed": 15,
+      "preparation_wait_seconds": 33.885890320001636,
+      "prepared": 19985,
+      "rate_end_to_end": 47.476015986340606,
+      "shard": "shard-2",
+      "successful": 19884,
+      "validation_seconds": 1.5913958349992754
+    },
+    {
+      "docking_failed": 95,
+      "docking_seconds": 276.7461977079947,
+      "elapsed_seconds": 316.33196746998874,
+      "gpu_uuid": "GPU-df3b4fa5-9e49-4612-5f0c-87eb8f8bcb55",
+      "preparation_failed": 13,
+      "preparation_wait_seconds": 24.579070779000176,
+      "prepared": 19987,
+      "rate_end_to_end": 62.88330629084209,
+      "shard": "shard-3",
+      "successful": 19892,
+      "validation_seconds": 1.4649520199891413
+    }
+  ],
+  "slurm_elapsed_seconds": 429,
+  "slurm_job_id": 1792935,
+  "total_input": 80000,
+  "total_successful": 79568
+}

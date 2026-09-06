@@ -1,0 +1,147 @@
+{
+  "config": {
+    "batch_sizes": [
+      256,
+      512,
+      1024,
+      2048,
+      4096,
+      8192,
+      12288,
+      16384,
+      20000
+    ],
+    "center": [
+      15.19,
+      53.903,
+      16.917
+    ],
+    "delimiter": "auto",
+    "device_id": 0,
+    "energy_range": 3.0,
+    "fragment_policy": "reject",
+    "id_column": null,
+    "input_format": "auto",
+    "input_path": "/tmp/igenvs-benchmark.MrgWof/rl_nonisomeric_20000.smi",
+    "max_gpu_memory": 0,
+    "num_modes": 1,
+    "prep_workers": 32,
+    "profile_path": "/tmp/igenvs-benchmark.MrgWof/balance.json",
+    "receptor": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/third_party/Uni-Dock/unidock/test/receptor/1iep_receptor.pdbqt",
+    "scoring": "vina",
+    "scratch_dir": "/tmp/igenvs-benchmark.MrgWof/scratch-balance",
+    "search_mode": "balance",
+    "seed": 401,
+    "size": [
+      20.0,
+      20.0,
+      20.0
+    ],
+    "smiles_column": "smiles",
+    "unidock_executable": "unidock"
+  },
+  "created_at": "2026-08-30T01:18:57.565057+00:00",
+  "hardware": {
+    "cpu_count": 72,
+    "cuda_visible_devices": "0",
+    "gpu": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "index": 0,
+      "memory_free_mib": 97274,
+      "memory_total_mib": 97871,
+      "name": "NVIDIA GH200 120GB",
+      "uuid": "GPU-35b2ba66-decc-2ad6-bcb2-8935183c6a0c"
+    },
+    "slurm_cpus_per_task": null,
+    "slurm_job_id": "1790333"
+  },
+  "measurements": [
+    {
+      "attempted": 256,
+      "attempted_ligands_per_second": 21.100770828927242,
+      "batch_size": 256,
+      "seconds": 12.132258204001118,
+      "success_fraction": 1.0,
+      "successful": 256,
+      "successful_ligands_per_second": 21.100770828927242
+    },
+    {
+      "attempted": 512,
+      "attempted_ligands_per_second": 24.670301156465307,
+      "batch_size": 512,
+      "seconds": 20.753698820000864,
+      "success_fraction": 0.994140625,
+      "successful": 509,
+      "successful_ligands_per_second": 24.525748610626643
+    },
+    {
+      "attempted": 1024,
+      "attempted_ligands_per_second": 26.09218007714443,
+      "batch_size": 1024,
+      "seconds": 39.245474965006,
+      "success_fraction": 0.994140625,
+      "successful": 1018,
+      "successful_ligands_per_second": 25.939296209504914
+    },
+    {
+      "attempted": 2048,
+      "attempted_ligands_per_second": 27.158621282854384,
+      "batch_size": 2048,
+      "seconds": 75.40883532600128,
+      "success_fraction": 0.99951171875,
+      "successful": 2047,
+      "successful_ligands_per_second": 27.145360237306118
+    },
+    {
+      "attempted": 4096,
+      "attempted_ligands_per_second": 28.18900232140586,
+      "batch_size": 4096,
+      "seconds": 145.304894203,
+      "success_fraction": 0.99755859375,
+      "successful": 4086,
+      "successful_ligands_per_second": 28.120181514957114
+    },
+    {
+      "attempted": 8192,
+      "attempted_ligands_per_second": 29.284678134810566,
+      "batch_size": 8192,
+      "seconds": 279.73672656699637,
+      "success_fraction": 0.994140625,
+      "successful": 8144,
+      "successful_ligands_per_second": 29.11308822386441
+    },
+    {
+      "attempted": 12288,
+      "attempted_ligands_per_second": 29.321752614922225,
+      "batch_size": 12288,
+      "seconds": 419.0745403719993,
+      "success_fraction": 0.9951985677083334,
+      "successful": 12229,
+      "successful_ligands_per_second": 29.180966205068675
+    },
+    {
+      "attempted": 16384,
+      "attempted_ligands_per_second": 29.7752030989861,
+      "batch_size": 16384,
+      "seconds": 550.2565321060029,
+      "success_fraction": 0.9952392578125,
+      "successful": 16306,
+      "successful_ligands_per_second": 29.633451033451376
+    }
+  ],
+  "preparation_failures": 17,
+  "schema_version": 1,
+  "selected_batch_size": 8192,
+  "selection_rule": "smallest batch within 98% of peak successful throughput and >=99% success",
+  "validation": {
+    "dedup_database": "/tmp/igenvs-benchmark.MrgWof/scratch-balance/igenvs-tune-mlf88net/validation/dedup.sqlite3",
+    "duplicates": 0,
+    "input": 20000,
+    "rejected": 0,
+    "rejected_path": "/tmp/igenvs-benchmark.MrgWof/scratch-balance/igenvs-tune-mlf88net/validation/rejected.csv",
+    "valid": 20000,
+    "validated_path": "/tmp/igenvs-benchmark.MrgWof/scratch-balance/igenvs-tune-mlf88net/validation/validated.csv",
+    "workers": 32
+  }
+}

@@ -1,0 +1,17 @@
+schema_version: 1
+
+# Mild molecule-instance discrimination. This arm tests whether the local
+# retrieval gain from 0.05 can be retained without giving up frozen property
+# transfer on the canonical hybrid representation.
+model:
+  vicreg_projector: true
+  vicreg_projector_dim: 256
+
+objective:
+  invariance_weight: 0.0
+  variance_weight: 0.0
+  covariance_weight: 0.0
+  contrastive_space: projector
+  contrastive_weight: 0.02
+  contrastive_temperature: 0.1
+  minimum_effective_rank_ratio: 0.05

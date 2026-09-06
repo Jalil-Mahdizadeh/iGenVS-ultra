@@ -1,0 +1,33 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.venv/
+build/
+dist/
+
+# Runtime and large binary artifacts
+outputs/
+runs/
+*.log
+containers/*.SIF
+containers/*.sif
+containers/*.sandbox/
+
+# Local debate artifacts are kept outside iGenVS git.
+/Prometheus-Momus/
+
+# Generated iGen3 benchmark datasets are too large to vendor in this repository.
+/iGen3/benchmarks/
+
+
+# Keep reproducible benchmark reports and manifests, but not generated working sets.
+benchmarks/**/results.csv
+benchmarks/**/validation/
+benchmarks/**/input/
+benchmarks/**/library-*.smi
+benchmarks/**/logs/*.out
+benchmarks/**/logs/*.err
+benchmarks/**/raw/

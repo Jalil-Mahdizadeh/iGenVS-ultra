@@ -1,0 +1,30 @@
+schema_version: 1
+
+# The original function filters Descriptors._descList by a set and returns
+# list(res.values()), so output order is _descList order, not set order.
+# On 2026-08-06, the mapping below was verified against batch 0, row 0 from
+# both source files with RDKit 2026.03.1. All 13 recomputed values matched the
+# stored values with rtol=atol=1e-12; maximum absolute error was 2.84e-14.
+confirmed_identical_across_sources: true
+confirmation_note: >-
+  Original getMolDescriptors function supplied by the data owner. Filtered
+  Descriptors._descList order was confirmed from Arrow dtypes/scaler statistics
+  and by exact recomputation of one ZINC and one PubChem row on 2026-08-06.
+source_function_ordering: "filtered rdkit.Chem.Descriptors._descList"
+source_rdkit_version: "not recorded"
+verification_rdkit_version: "2026.03.1"
+
+features:
+  - {column: "1",  name: "qed",                 unit: "dimensionless",                         generator: "rdkit.Chem.Descriptors.qed"}
+  - {column: "2",  name: "MolWt",               unit: "g/mol",                                 generator: "rdkit.Chem.Descriptors.MolWt"}
+  - {column: "3",  name: "NumValenceElectrons", unit: "count",                                 generator: "rdkit.Chem.Descriptors.NumValenceElectrons"}
+  - {column: "4",  name: "MaxPartialCharge",    unit: "elementary charge (Gasteiger)",          generator: "rdkit.Chem.Descriptors.MaxPartialCharge"}
+  - {column: "5",  name: "MinPartialCharge",    unit: "elementary charge (Gasteiger)",          generator: "rdkit.Chem.Descriptors.MinPartialCharge"}
+  - {column: "6",  name: "BalabanJ",            unit: "dimensionless",                         generator: "rdkit.Chem.Descriptors.BalabanJ"}
+  - {column: "7",  name: "LabuteASA",           unit: "angstrom^2",                            generator: "rdkit.Chem.Descriptors.LabuteASA"}
+  - {column: "8",  name: "TPSA",                unit: "angstrom^2",                            generator: "rdkit.Chem.Descriptors.TPSA"}
+  - {column: "9",  name: "HeavyAtomCount",      unit: "count",                                 generator: "rdkit.Chem.Descriptors.HeavyAtomCount"}
+  - {column: "10", name: "NumHAcceptors",       unit: "count",                                 generator: "rdkit.Chem.Descriptors.NumHAcceptors"}
+  - {column: "11", name: "NumHDonors",          unit: "count",                                 generator: "rdkit.Chem.Descriptors.NumHDonors"}
+  - {column: "12", name: "MolLogP",             unit: "dimensionless",                         generator: "rdkit.Chem.Descriptors.MolLogP"}
+  - {column: "13", name: "MolMR",               unit: "Wildman-Crippen MR conventional units", generator: "rdkit.Chem.Descriptors.MolMR"}

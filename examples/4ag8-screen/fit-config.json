@@ -1,0 +1,20 @@
+{
+  "head": {
+    "architecture": "wide_mlp_rank_aux",
+    "embedding_space": "released_hybrid_w3",
+    "ensemble_seeds": [
+      260904,
+      260905,
+      260906
+    ],
+    "epochs": 7
+  },
+  "release_equivalent_docking_protocol": true,
+  "schema_version": 1,
+  "target_input": {
+    "pdb_id": "4AG8",
+    "source": "released benchmark target"
+  },
+  "target_input_mode": "released-example",
+  "target_name": "4ag8"
+}

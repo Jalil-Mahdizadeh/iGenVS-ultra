@@ -1,0 +1,14 @@
+complex-pdb,ligand-id
+1err.pdb,RAL
+1iep.pdb,STI
+1nyx.pdb,DRF
+1t7r.pdb,DHT
+2zv2.pdb,609
+4ag8.pdb,AXI
+4f8h.pdb,RKE
+4yay.pdb,ZD7
+5ek0.pdb,5P2
+5l2s.pdb,6ZV
+5mzj.pdb,TEP
+6d6t.pdb,FYP
+6iiu.pdb,A8X

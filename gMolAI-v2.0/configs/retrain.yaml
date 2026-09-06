@@ -1,0 +1,91 @@
+schema_version: 1
+experiment_name: combined-zinc-pubchem-v1
+seed: 42
+
+paths:
+  project_root: ..
+  work_dir: ./work
+  run_dir: ./runs/combined-zinc-pubchem-v1
+  descriptor_manifest: ./configs/descriptors.yaml
+  sources:
+    - name: zinc
+      path: ../inputs/ZINC.feather
+      priority: 0
+      sha256: 5b1567fd0f799f6fd71121c028fe73b64a94fd1adcc23b33a354016367d4cd80
+      rows: 154346524
+    - name: pubchem
+      path: ../inputs/PubChem.feather
+      priority: 1
+      sha256: c17a6a2a81bdc66d662b9470647415f6ce822b823ff6a724bc4fd76bc3c4ea83
+      rows: 78023105
+
+data:
+  smiles_column: "0"
+  descriptor_columns: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"]
+  record_batches_per_task: 8
+  hash_buckets: 256
+  canonicalization:
+    isomeric_smiles: true
+    fragment_policy: reject
+    allowed_elements: [C, N, O, F, P, S, Cl, Br, I, H, B, Si]
+    min_atoms: 2
+    max_atoms: 256
+  deduplication:
+    key: canonical_isomeric_smiles
+    descriptor_conflict_policy: exclude
+    descriptor_atol: 1.0e-8
+    descriptor_rtol: 1.0e-5
+    max_conflict_fraction: 0.001
+  split:
+    method: bemis_murcko_scaffold_hash
+    train_fraction: 0.99
+    validation_fraction: 0.005
+    test_fraction: 0.005
+    seed: 20260806
+  graph_shards:
+    graphs_per_shard: 8192
+
+features:
+  # Explicit, versioned replacement for mutable DeepChem defaults. The feature
+  # schema is embedded in every shard/checkpoint.
+  include_atom_chirality: true
+  canonical_position_encoding_dim: 0
+
+model:
+  hidden_dim: 256
+  latent_dim: 256
+  gine_layers: 4
+  dropout: 0.10
+  logvar_min: -10.0
+  logvar_max: 6.0
+
+objective:
+  node_mask_probability: 0.15
+  bond_feature_mask_probability: 0.15
+  bond_dropout_probability: 0.15
+  easy_negative_ratio: 1.0
+  hard_negative_ratio: 1.0
+  hard_pool_ratio: 5.0
+  node_weight: 1.0
+  edge_existence_weight: 1.0
+  edge_feature_weight: 1.0
+  descriptor_weight: 1.0
+  kl_beta_max: 0.00390625
+  kl_warmup_steps: 50000
+
+training:
+  max_steps: 500000
+  node_budget_per_gpu: 32768
+  max_graphs_per_gpu: 2048
+  learning_rate: 0.0002
+  min_learning_rate: 0.000002
+  warmup_steps: 10000
+  weight_decay: 0.01
+  gradient_clip_norm: 1.0
+  precision: bf16
+  checkpoint_every_steps: 1000
+  validate_every_steps: 5000
+  log_every_steps: 20
+  validation_max_graphs: 100000
+  test_max_graphs: 250000
+  resume: auto

@@ -1,0 +1,398 @@
+{
+  "analysis": "Cross-engine docking-score and ranking correlation",
+  "analysis_date": "2026-08-30",
+  "engines": {
+    "autodock_gpu": {
+      "commit": "e63e6f6280ebfad18caa3e8f48afdc269e79e063",
+      "scoring_function": "ad4",
+      "version": "1.6"
+    },
+    "unidock": {
+      "commit": "95e409172b15dec0989aea70b0f2328e8ca52025",
+      "scoring_function": "vina",
+      "version": "1.2.0"
+    }
+  },
+  "method": {
+    "better_score_direction": "lower",
+    "pair_key": "molecule_id",
+    "pair_requirements": [
+      "same canonical_smiles",
+      "status == success for both engines",
+      "finite docking_score for both engines"
+    ],
+    "rank_ties": "average ranks; exact top-k uses molecule_id tie-break",
+    "scientific_scope": "Agreement analysis only; no experimental labels or reference poses were used, so this is not an accuracy comparison."
+  },
+  "runs": {
+    "four_gpu_80k": {
+      "input_files": {
+        "autodock_gpu": [
+          {
+            "bytes": 3394178,
+            "path": "benchmarks/autodock-gpu-v1.6-vs-unidock-v1.2.0-gh200-20260830/raw/adgpu-fast-80k-4gpu-covered/shard-0/results.csv",
+            "sha256": "bd78ebe12da15c0164eb3844321ad9960b1f30c85d063ebe5e330c71d0a6a398"
+          },
+          {
+            "bytes": 3393861,
+            "path": "benchmarks/autodock-gpu-v1.6-vs-unidock-v1.2.0-gh200-20260830/raw/adgpu-fast-80k-4gpu-covered/shard-1/results.csv",
+            "sha256": "312c42072352dd624602b6756f656abbdcbd99c3eda3e7c4b23d9d66be4cd52b"
+          },
+          {
+            "bytes": 3390811,
+            "path": "benchmarks/autodock-gpu-v1.6-vs-unidock-v1.2.0-gh200-20260830/raw/adgpu-fast-80k-4gpu-covered/shard-2/results.csv",
+            "sha256": "cafb5de7ec287a8909ab5a56586a3b2161e4d5bdd213cc75815b10dcd86664f4"
+          },
+          {
+            "bytes": 3392390,
+            "path": "benchmarks/autodock-gpu-v1.6-vs-unidock-v1.2.0-gh200-20260830/raw/adgpu-fast-80k-4gpu-covered/shard-3/results.csv",
+            "sha256": "2879973ec0c7d182d46f155a1d2d94da66d94363970fa174785c9e5b1480a3bb"
+          }
+        ],
+        "unidock": [
+          {
+            "bytes": 3317453,
+            "path": "benchmarks/autodock-gpu-v1.6-vs-unidock-v1.2.0-gh200-20260830/raw/unidock-fast-80k-4gpu/shard-0/results.csv",
+            "sha256": "364c29ef1578ee9f0e881d46336bbe1a5f4dc8dac2b28481c9f3fb79f1b6e18d"
+          },
+          {
+            "bytes": 3317804,
+            "path": "benchmarks/autodock-gpu-v1.6-vs-unidock-v1.2.0-gh200-20260830/raw/unidock-fast-80k-4gpu/shard-1/results.csv",
+            "sha256": "43ffaf0aabaa7b859c0bbe842ceac04228ed2c16747ce1aa1d52ec41630ce04d"
+          },
+          {
+            "bytes": 3314923,
+            "path": "benchmarks/autodock-gpu-v1.6-vs-unidock-v1.2.0-gh200-20260830/raw/unidock-fast-80k-4gpu/shard-2/results.csv",
+            "sha256": "2784f0f80c0aa6b179b85a1e406181481110ceaf36deed834e50262345fce33e"
+          },
+          {
+            "bytes": 3315431,
+            "path": "benchmarks/autodock-gpu-v1.6-vs-unidock-v1.2.0-gh200-20260830/raw/unidock-fast-80k-4gpu/shard-3/results.csv",
+            "sha256": "4a894fc16bb171f1ac608954d686df0bd5324195f10ee25b16a5705346199131"
+          }
+        ]
+      },
+      "label": "Matched four-GH200 80,000-input run",
+      "pairing": {
+        "autodock_gpu_rows": 80000,
+        "autodock_gpu_status_counts": {
+          "preparation_failed": 48,
+          "success": 79952
+        },
+        "canonical_smiles_mismatch_count": 0,
+        "paired_finite_successes": 79606,
+        "unidock_rows": 80000,
+        "unidock_status_counts": {
+          "invalid_output": 346,
+          "preparation_failed": 48,
+          "success": 79606
+        }
+      },
+      "partial_correlation": {
+        "controls": [
+          "heavy_atoms",
+          "rotatable_bonds"
+        ],
+        "pearson_r": 0.43014144804336263,
+        "spearman_rho": 0.4476721691327822
+      },
+      "rank_correlation": {
+        "kendall_tau_b": 0.27303045959871747,
+        "spearman_rho": 0.39499534321278085
+      },
+      "ranking_distance": {
+        "mean_absolute_percentile_points": 24.8951899928011,
+        "median_absolute_percentile_points": 20.500910746812384,
+        "within_10_percentile_points_fraction": 0.2873275883727357,
+        "within_25_percentile_points_fraction": 0.5777328342084768
+      },
+      "score_correlation": {
+        "pearson_r": 0.302140453041423,
+        "pearson_r_squared": 0.09128885336407634,
+        "pearson_r_winsorized_1pct_each_tail": 0.30441670815027866
+      },
+      "score_property_spearman": {
+        "autodock_gpu_vs_heavy_atoms": -0.5604289247165811,
+        "autodock_gpu_vs_rotatable_bonds": -0.1260592480219072,
+        "unidock_vs_heavy_atoms": -0.040920675436876296,
+        "unidock_vs_rotatable_bonds": 0.13483288251648085
+      },
+      "score_summary": {
+        "autodock_gpu": {
+          "finite_positive_count": 0,
+          "finite_positive_fraction": 0.0,
+          "maximum": -0.24,
+          "mean": -8.445488028540561,
+          "median": -8.46,
+          "minimum": -12.59,
+          "p01": -10.45,
+          "p05": -9.84,
+          "p95": -7.0,
+          "p99": -6.19,
+          "unique_score_count": 701
+        },
+        "unidock": {
+          "finite_positive_count": 2194,
+          "finite_positive_fraction": 0.02756073662789237,
+          "maximum": 302.489868,
+          "mean": -4.7695001101424515,
+          "median": -7.800069000000001,
+          "minimum": -11.671099,
+          "p01": -9.8649254,
+          "p05": -9.28196975,
+          "p95": -6.11744325,
+          "p99": 120.984311,
+          "unique_score_count": 78687
+        }
+      },
+      "top_rank_overlap": [
+        {
+          "fixed_count": {
+            "intersection": 3,
+            "overlap_fraction": 0.0375
+          },
+          "fraction": 0.001,
+          "random_expected_intersection": 0.08039595005401604,
+          "random_expected_overlap_fraction": 0.0010049493756752004,
+          "tie_inclusive": {
+            "autodock_gpu_count": 82,
+            "autodock_gpu_score_cutoff": -11.11,
+            "intersection": 3,
+            "jaccard": 0.018867924528301886,
+            "overlap_coefficient": 0.0375,
+            "unidock_count": 80,
+            "unidock_score_cutoff": -10.563216
+          },
+          "top_count": 80
+        },
+        {
+          "fixed_count": {
+            "intersection": 103,
+            "overlap_fraction": 0.12923462986198245
+          },
+          "fraction": 0.01,
+          "random_expected_intersection": 7.979411099665854,
+          "random_expected_overlap_fraction": 0.010011808155164184,
+          "tie_inclusive": {
+            "autodock_gpu_count": 799,
+            "autodock_gpu_score_cutoff": -10.45,
+            "intersection": 103,
+            "jaccard": 0.06898861352980576,
+            "overlap_coefficient": 0.12923462986198245,
+            "unidock_count": 797,
+            "unidock_score_cutoff": -9.864931
+          },
+          "top_count": 797
+        },
+        {
+          "fixed_count": {
+            "intersection": 847,
+            "overlap_fraction": 0.2127606129113288
+          },
+          "fraction": 0.05,
+          "random_expected_intersection": 199.08500615531491,
+          "random_expected_overlap_fraction": 0.050008793307037155,
+          "tie_inclusive": {
+            "autodock_gpu_count": 4067,
+            "autodock_gpu_score_cutoff": -9.84,
+            "intersection": 859,
+            "jaccard": 0.11948810682987898,
+            "overlap_coefficient": 0.21577493092187894,
+            "unidock_count": 3981,
+            "unidock_score_cutoff": -9.281977
+          },
+          "top_count": 3981
+        },
+        {
+          "fixed_count": {
+            "intersection": 2217,
+            "overlap_fraction": 0.2784826026881045
+          },
+          "fraction": 0.1,
+          "random_expected_intersection": 796.1400020098988,
+          "random_expected_overlap_fraction": 0.10000502474687838,
+          "tie_inclusive": {
+            "autodock_gpu_count": 7969,
+            "autodock_gpu_score_cutoff": -9.54,
+            "intersection": 2218,
+            "jaccard": 0.1617561260210035,
+            "overlap_coefficient": 0.27860821504836075,
+            "unidock_count": 7961,
+            "unidock_score_cutoff": -8.970446
+          },
+          "top_count": 7961
+        }
+      ]
+    },
+    "one_gpu_20k": {
+      "input_files": {
+        "autodock_gpu": [
+          {
+            "bytes": 3384125,
+            "path": "benchmarks/autodock-gpu-v1.6-vs-unidock-v1.2.0-gh200-20260830/raw/adgpu-fast-20k-one-gpu-covered-optimized/results.csv",
+            "sha256": "16a3301ea24a549198bc612aab6ef0650ea287f71479b81f3d2ed6075fdab2a9"
+          }
+        ],
+        "unidock": [
+          {
+            "bytes": 3307272,
+            "path": "benchmarks/autodock-gpu-v1.6-vs-unidock-v1.2.0-gh200-20260830/raw/unidock-fast-20k-one-gpu/results.csv",
+            "sha256": "cd74a2e1b688366452e0777a2606c062af9d397fe73a93db087995328e48d6d7"
+          }
+        ]
+      },
+      "label": "Matched one-GH200 20,000-input run",
+      "pairing": {
+        "autodock_gpu_rows": 20000,
+        "autodock_gpu_status_counts": {
+          "preparation_failed": 17,
+          "success": 19983
+        },
+        "canonical_smiles_mismatch_count": 0,
+        "paired_finite_successes": 19906,
+        "unidock_rows": 20000,
+        "unidock_status_counts": {
+          "invalid_output": 77,
+          "preparation_failed": 17,
+          "success": 19906
+        }
+      },
+      "partial_correlation": {
+        "controls": [
+          "heavy_atoms",
+          "rotatable_bonds"
+        ],
+        "pearson_r": 0.43051567261879675,
+        "spearman_rho": 0.45308166215865314
+      },
+      "rank_correlation": {
+        "kendall_tau_b": 0.27628246399273343,
+        "spearman_rho": 0.3994070171300072
+      },
+      "ranking_distance": {
+        "mean_absolute_percentile_points": 24.8052889525255,
+        "median_absolute_percentile_points": 20.28761617683999,
+        "within_10_percentile_points_fraction": 0.28453732542951876,
+        "within_25_percentile_points_fraction": 0.5816839143976691
+      },
+      "score_correlation": {
+        "pearson_r": 0.3024340153841123,
+        "pearson_r_squared": 0.09146633366135748,
+        "pearson_r_winsorized_1pct_each_tail": 0.3083416303031339
+      },
+      "score_property_spearman": {
+        "autodock_gpu_vs_heavy_atoms": -0.5637053727912623,
+        "autodock_gpu_vs_rotatable_bonds": -0.13050565632266492,
+        "unidock_vs_heavy_atoms": -0.043785426933615146,
+        "unidock_vs_rotatable_bonds": 0.13349495207082937
+      },
+      "score_summary": {
+        "autodock_gpu": {
+          "finite_positive_count": 0,
+          "finite_positive_fraction": 0.0,
+          "maximum": -3.28,
+          "mean": -8.451382497739374,
+          "median": -8.47,
+          "minimum": -12.77,
+          "p01": -10.45,
+          "p05": -9.87,
+          "p95": -7.02,
+          "p99": -6.17,
+          "unique_score_count": 605
+        },
+        "unidock": {
+          "finite_positive_count": 556,
+          "finite_positive_fraction": 0.027931277001908974,
+          "maximum": 264.918945,
+          "mean": -4.82819080669145,
+          "median": -7.818913,
+          "minimum": -12.184923,
+          "p01": -9.8567094,
+          "p05": -9.290089250000001,
+          "p95": -6.156013,
+          "p99": 120.72496325000043,
+          "unique_score_count": 19840
+        }
+      },
+      "top_rank_overlap": [
+        {
+          "fixed_count": {
+            "intersection": 3,
+            "overlap_fraction": 0.15
+          },
+          "fraction": 0.001,
+          "random_expected_intersection": 0.020094443886265446,
+          "random_expected_overlap_fraction": 0.0010047221943132723,
+          "tie_inclusive": {
+            "autodock_gpu_count": 21,
+            "autodock_gpu_score_cutoff": -11.27,
+            "intersection": 3,
+            "jaccard": 0.07894736842105263,
+            "overlap_coefficient": 0.15,
+            "unidock_count": 20,
+            "unidock_score_cutoff": -10.63447
+          },
+          "top_count": 20
+        },
+        {
+          "fixed_count": {
+            "intersection": 26,
+            "overlap_fraction": 0.13
+          },
+          "fraction": 0.01,
+          "random_expected_intersection": 2.009444388626545,
+          "random_expected_overlap_fraction": 0.010047221943132723,
+          "tie_inclusive": {
+            "autodock_gpu_count": 209,
+            "autodock_gpu_score_cutoff": -10.45,
+            "intersection": 29,
+            "jaccard": 0.07631578947368421,
+            "overlap_coefficient": 0.145,
+            "unidock_count": 200,
+            "unidock_score_cutoff": -9.85671
+          },
+          "top_count": 200
+        },
+        {
+          "fixed_count": {
+            "intersection": 212,
+            "overlap_fraction": 0.21285140562248997
+          },
+          "fraction": 0.05,
+          "random_expected_intersection": 49.83502461569376,
+          "random_expected_overlap_fraction": 0.050035165276800964,
+          "tie_inclusive": {
+            "autodock_gpu_count": 1003,
+            "autodock_gpu_score_cutoff": -9.87,
+            "intersection": 214,
+            "jaccard": 0.11988795518207283,
+            "overlap_coefficient": 0.21485943775100402,
+            "unidock_count": 996,
+            "unidock_score_cutoff": -9.290544
+          },
+          "top_count": 996
+        },
+        {
+          "fixed_count": {
+            "intersection": 556,
+            "overlap_fraction": 0.2792566549472627
+          },
+          "fraction": 0.1,
+          "random_expected_intersection": 199.14000803777756,
+          "random_expected_overlap_fraction": 0.10002009444388626,
+          "tie_inclusive": {
+            "autodock_gpu_count": 2005,
+            "autodock_gpu_score_cutoff": -9.54,
+            "intersection": 561,
+            "jaccard": 0.1633187772925764,
+            "overlap_coefficient": 0.281767955801105,
+            "unidock_count": 1991,
+            "unidock_score_cutoff": -8.979272
+          },
+          "top_count": 1991
+        }
+      ]
+    }
+  },
+  "schema_version": 1
+}

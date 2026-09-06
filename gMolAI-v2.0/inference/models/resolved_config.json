@@ -1,0 +1,152 @@
+{
+  "_config_hash": "e925a1605de913173539eb82307170f1419b0911a7a8e1dd77d0ab3ad5b359c4",
+  "_config_path": "/nobackup/proj/disk/theo-storage/personal/jalil/gMolAI/gMolAI-retrain/configs/retrain.yaml",
+  "_descriptor_schema_hash": "ce048da426db8c7aa529628d90335d47c713e757b59cbc6ded86158f08da9fe0",
+  "_training_plan_file_hash": "75f804bed75463efbf6af7fe41214ff132b9927890e847e7cf28e05b35ae0ea1",
+  "_training_plan_file_hashes": [
+    "75f804bed75463efbf6af7fe41214ff132b9927890e847e7cf28e05b35ae0ea1"
+  ],
+  "_training_plan_path": "/nobackup/proj/disk/theo-storage/personal/jalil/gMolAI/gMolAI-retrain/configs/representation-pilot-mean-node-contrastive-001-desc050.yaml",
+  "_training_plan_paths": [
+    "/nobackup/proj/disk/theo-storage/personal/jalil/gMolAI/gMolAI-retrain/configs/representation-pilot-mean-node-contrastive-001-desc050.yaml"
+  ],
+  "data": {
+    "canonicalization": {
+      "allowed_elements": [
+        "C",
+        "N",
+        "O",
+        "F",
+        "P",
+        "S",
+        "Cl",
+        "Br",
+        "I",
+        "H",
+        "B",
+        "Si"
+      ],
+      "fragment_policy": "reject",
+      "isomeric_smiles": true,
+      "max_atoms": 256,
+      "min_atoms": 2
+    },
+    "deduplication": {
+      "descriptor_atol": 1e-08,
+      "descriptor_conflict_policy": "exclude",
+      "descriptor_rtol": 1e-05,
+      "key": "canonical_isomeric_smiles",
+      "max_conflict_fraction": 0.001
+    },
+    "descriptor_columns": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13"
+    ],
+    "graph_shards": {
+      "graphs_per_shard": 8192
+    },
+    "hash_buckets": 256,
+    "record_batches_per_task": 8,
+    "smiles_column": "0",
+    "split": {
+      "method": "bemis_murcko_scaffold_hash",
+      "seed": 20260806,
+      "test_fraction": 0.005,
+      "train_fraction": 0.99,
+      "validation_fraction": 0.005
+    }
+  },
+  "experiment_name": "combined-zinc-pubchem-representation-pilot-mean-node-contrastive-001-desc050",
+  "features": {
+    "canonical_position_encoding_dim": 0,
+    "include_atom_chirality": true
+  },
+  "model": {
+    "architecture": "masked_graph_vicreg",
+    "dropout": 0.1,
+    "gine_layers": 4,
+    "graph_latent_dim": 256,
+    "hidden_dim": 256,
+    "latent_dim": 256,
+    "logvar_max": 6.0,
+    "logvar_min": -10.0,
+    "node_latent_dim": 128,
+    "vicreg_projector": false
+  },
+  "objective": {
+    "bond_dropout_probability": 0.15,
+    "bond_feature_mask_probability": 0.3,
+    "collapse_penalty_weight": 10.0,
+    "contrastive_space": "mean_node_z",
+    "contrastive_temperature": 0.1,
+    "contrastive_weight": 0.01,
+    "covariance_weight": 0.0,
+    "descriptor_weight": 0.5,
+    "easy_negative_ratio": 1.0,
+    "edge_existence_weight": 0.5,
+    "edge_feature_weight": 1.0,
+    "hard_negative_ratio": 1.0,
+    "hard_pool_ratio": 5.0,
+    "invariance_weight": 0.0,
+    "kl_beta_max": 0.00390625,
+    "kl_warmup_steps": 50000,
+    "minimum_effective_rank_ratio": 0.05,
+    "node_mask_probability": 0.3,
+    "node_weight": 1.0,
+    "variance_target": 1.0,
+    "variance_weight": 0.0
+  },
+  "paths": {
+    "descriptor_manifest": "/nobackup/proj/disk/theo-storage/personal/jalil/gMolAI/gMolAI-retrain/configs/descriptors.yaml",
+    "project_root": "/nobackup/proj/disk/theo-storage/personal/jalil/gMolAI/gMolAI-retrain",
+    "run_dir": "/nobackup/proj/disk/theo-storage/personal/jalil/gMolAI/gMolAI-retrain/runs/combined-zinc-pubchem-representation-pilot-mean-node-contrastive-001-desc050",
+    "sources": [
+      {
+        "name": "zinc",
+        "path": "/nobackup/proj/disk/theo-storage/personal/jalil/gMolAI/inputs/ZINC.feather",
+        "priority": 0,
+        "rows": 154346524,
+        "sha256": "5b1567fd0f799f6fd71121c028fe73b64a94fd1adcc23b33a354016367d4cd80"
+      },
+      {
+        "name": "pubchem",
+        "path": "/nobackup/proj/disk/theo-storage/personal/jalil/gMolAI/inputs/PubChem.feather",
+        "priority": 1,
+        "rows": 78023105,
+        "sha256": "c17a6a2a81bdc66d662b9470647415f6ce822b823ff6a724bc4fd76bc3c4ea83"
+      }
+    ],
+    "work_dir": "/nobackup/proj/disk/theo-storage/personal/jalil/gMolAI/gMolAI-retrain/work"
+  },
+  "schema_version": 1,
+  "seed": 42,
+  "training": {
+    "checkpoint_every_steps": 500,
+    "gradient_clip_norm": 1.0,
+    "learning_rate": 0.0003,
+    "log_every_steps": 20,
+    "max_graphs_per_gpu": 2048,
+    "max_steps": 15000,
+    "min_learning_rate": 3e-06,
+    "node_budget_per_gpu": 32768,
+    "precision": "bf16",
+    "resume": "auto",
+    "retain_every_steps": 2500,
+    "test_max_graphs": 250000,
+    "validate_every_steps": 2500,
+    "validation_max_graphs": 50000,
+    "warmup_steps": 1000,
+    "weight_decay": 0.01
+  }
+}

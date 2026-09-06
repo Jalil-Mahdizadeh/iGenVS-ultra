@@ -1,0 +1,12 @@
+schema_version: 1
+
+model:
+  vicreg_projector: true
+  vicreg_projector_dim: 256
+
+objective:
+  invariance_space: projector
+  invariance_weight: 1.0
+  variance_weight: 1.0
+  covariance_weight: 0.04
+  minimum_effective_rank_ratio: 0.05

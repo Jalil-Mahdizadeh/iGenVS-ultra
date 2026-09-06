@@ -1,0 +1,22 @@
+* text=auto eol=lf
+
+*.pdb binary
+*.pdbqt binary
+*.sdf binary
+*.npz binary
+*.npy binary
+*.pt binary
+*.pth binary
+*.pkl binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.docx binary
+*.tar binary
+*.bz2 binary
+
+# Preserve third-party and forensic legacy snapshots byte-for-byte. Their
+# upstream formatting predates this repository's whitespace policy.
+/iGenVS/third_party/** -text -whitespace
+/iGenVS/iGen3/legacy/** -text -whitespace

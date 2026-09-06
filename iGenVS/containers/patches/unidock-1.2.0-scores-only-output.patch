@@ -1,0 +1,168 @@
+--- a/src/lib/vina.h
++++ b/src/lib/vina.h
+@@ -376,6 +376,8 @@
+     void write_poses(const std::string& output_name, int how_many = 9,double energy_range = 3.0);
+     void write_poses_gpu(const std::vector<std::string>& gpu_output_name, int how_many = 9,
+                          double energy_range = 3.0);
++    void write_scores_gpu(const std::vector<std::string>& ligand_names,
++                          const std::string& score_file);
+     void write_maps(const std::string& map_prefix = "receptor",
+                     const std::string& gpf_filename = "NULL",
+                     const std::string& fld_filename = "NULL",
+--- a/src/lib/vina.cpp
++++ b/src/lib/vina.cpp
+@@ -20,6 +20,8 @@
+
+ */
+
++#include <fstream>
++#include <iomanip>
+ #include "vina.h"
+ #include "scoring_function.h"
+ #include "precalculate.h"
+@@ -1044,6 +1046,23 @@
+     }
+ }
+
++/* Write one best score per GPU ligand without serializing pose coordinates. */
++void Vina::write_scores_gpu(const std::vector<std::string>& ligand_names,
++                            const std::string& score_file) {
++    assert(ligand_names.size() == m_poses_gpu.size());
++    std::ofstream output(score_file, std::ios::app);
++    if (!output.is_open()) throw file_error(score_file, false);
++    output << std::setprecision(17);
++    VINA_RANGE(i, 0, ligand_names.size()) {
++        output << ligand_names[i] << '\t';
++        if (!m_poses_gpu[i].empty() && not_max(m_poses_gpu[i][0].e))
++            output << m_poses_gpu[i][0].e;
++        else
++            output << "nan";
++        output << '\n';
++    }
++}
++
+ void Vina::write_pose(const std::string& output_name, const std::string& remark) {
+     std::ostringstream format_remark;
+     format_remark.setf(std::ios::fixed, std::ios::floatfield);
+--- a/src/main/main.cpp
++++ b/src/main/main.cpp
+@@ -21,6 +21,7 @@
+ */
+
+ #include <cstddef>
++#include <fstream>
+ #include <iostream>
+ #include <string>
+ #include <vector>  // ligand paths
+@@ -214,7 +215,8 @@
+                         std::string batch_type,int exhaustiveness, bool multi_bias,float max_memory,
+                         float receptor_atom_numbers,std::string out_dir,std::string bias_file,int num_modes,
+                         double min_rmsd,int max_evals,int max_step,int seed, int refine_step,bool local_only,
+-                        double energy_range){
++                        double energy_range, bool scores_only_output,
++                        const std::string& score_file){
+     int processed_ligands = 0;
+     int batch_id = 0 ;
+     while (processed_ligands < sized_group.size()) {
+@@ -251,8 +253,10 @@
+         processed_ligands += batch_size;
+         gpu_out_name = {};
+         VINA_RANGE(i, 0, batch_ligand_names.size()) {
+-            gpu_out_name.push_back(
+-                default_output(get_filename(batch_ligand_names[i]), out_dir));
++            if (!scores_only_output) {
++                gpu_out_name.push_back(
++                    default_output(get_filename(batch_ligand_names[i]), out_dir));
++            }
+             if (v1.multi_bias) {
+                 std::ifstream bias_file_content(get_biasname(batch_ligand_names[i]));
+                 if (!bias_file_content.is_open()) {
+@@ -272,7 +276,11 @@
+
+
+
+-        v1.write_poses_gpu(gpu_out_name, num_modes, energy_range);
++        if (scores_only_output) {
++            v1.write_scores_gpu(batch_ligand_names, score_file);
++        } else {
++            v1.write_poses_gpu(gpu_out_name, num_modes, energy_range);
++        }
+         auto end = std::chrono::system_clock::now();
+         std::cout << "Batch " << batch_id << " running time: "
+                     << std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+@@ -397,6 +405,7 @@
+         bool score_only = false;
+         bool local_only = false;
+         bool no_refine = false;
++        bool scores_only_output = false;
+         bool force_even_voxels = false;
+         bool randomize_only = false;
+         bool help = false;
+@@ -467,6 +476,8 @@
+             "score_only", bool_switch(&score_only), "score only - search space can be omitted")(
+             "score_file", value<std::string>(&score_file)->default_value(score_file),
+             "score only output file in batch mode, with 'score_only' option")(
++            "scores_only_output", bool_switch(&scores_only_output),
++            "write a compact ligand-path/score table instead of GPU docking pose files")(
+             "local_only", bool_switch(&local_only), "do local search only")(
+             "no_refine", bool_switch(&no_refine),
+             "when --receptor is provided, do not use explicit receptor atoms (instead of "
+@@ -745,6 +756,15 @@
+             std::cerr << "WARNING: In ligand mode, --dir argument is ignored.\n";
+         }
+
++        if (scores_only_output) {
++            if (score_only || !(vm.count("gpu_batch") || vm.count("ligand_index")))
++                throw usage_error("--scores_only_output requires GPU batch docking");
++            if (!boost::filesystem::path(score_file).is_absolute())
++                score_file = (boost::filesystem::path(out_dir) / score_file).string();
++            std::ofstream score_output(score_file, std::ios::trunc);
++            if (!score_output.is_open()) throw file_error(score_file, false);
++        }
++
+         if (!score_only) {
+             if (!vm.count("out") && ligand_names.size() == 1) {
+                 out_name = default_output(ligand_names[0]);
+@@ -989,14 +1009,14 @@
+                 all_ligands.clear();
+                 int next_batch_index
+                     = std::min(int(batch_index + ligand_batch_limit), int(ligand_names.size()));
+-#pragma omp parallel for
++                all_ligands.resize(next_batch_index - batch_index);
++#pragma omp parallel for schedule(static)
+                 for (int ligand_count = batch_index; ligand_count < next_batch_index;
+                      ++ligand_count) {
+                     auto& ligand = ligand_names[ligand_count];
+                     auto l = parse_ligand_from_file_no_failure(
+                         ligand, v.m_scoring_function->get_atom_typing(), keep_H);
+-#pragma omp critical
+-                    all_ligands.emplace_back(std::make_pair(ligand, l));
++                    all_ligands[ligand_count - batch_index] = std::make_pair(ligand, std::move(l));
+                 }
+                 batch_index = next_batch_index;
+                 /*
+@@ -1091,19 +1111,19 @@
+                 int extra_larg_batch_id = 0;
+                 template_batch_docking<SmallConfig>(v,all_ligands,smallGroup,"Small",exhaustiveness, multi_bias,max_memory,
+                         receptor_atom_numbers, out_dir,bias_file, num_modes,
+-                        min_rmsd,max_evals,max_step,seed, refine_step, local_only, energy_range);
++                        min_rmsd,max_evals,max_step,seed, refine_step, local_only, energy_range, scores_only_output, score_file);
+                 template_batch_docking<MediumConfig>(v,all_ligands,mediumGroup,"Medium",exhaustiveness, multi_bias,max_memory,
+                         receptor_atom_numbers, out_dir,bias_file, num_modes,
+-                        min_rmsd,max_evals,max_step,seed, refine_step, local_only, energy_range);
++                        min_rmsd,max_evals,max_step,seed, refine_step, local_only, energy_range, scores_only_output, score_file);
+                 template_batch_docking<LargeConfig>(v,all_ligands,largeGroup,"Large",exhaustiveness, multi_bias,max_memory,
+                         receptor_atom_numbers, out_dir,bias_file, num_modes,
+-                        min_rmsd,max_evals,max_step,seed, refine_step, local_only, energy_range);
++                        min_rmsd,max_evals,max_step,seed, refine_step, local_only, energy_range, scores_only_output, score_file);
+                 template_batch_docking<ExtraLargeConfig>(v,all_ligands,extraLargeGroup,"Extra Large",exhaustiveness, multi_bias,max_memory,
+                         receptor_atom_numbers, out_dir,bias_file, num_modes,
+-                        min_rmsd,max_evals,max_step,seed, refine_step, local_only, energy_range);
++                        min_rmsd,max_evals,max_step,seed, refine_step, local_only, energy_range, scores_only_output, score_file);
+                 template_batch_docking<MaxConfig>(v,all_ligands,maxGroup,"Max",exhaustiveness, multi_bias,max_memory,
+                         receptor_atom_numbers, out_dir,bias_file, num_modes,
+-                        min_rmsd,max_evals,max_step,seed, refine_step, local_only, energy_range);
++                        min_rmsd,max_evals,max_step,seed, refine_step, local_only, energy_range, scores_only_output, score_file);
+             }
+         }
+     }

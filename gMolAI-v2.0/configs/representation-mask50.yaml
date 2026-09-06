@@ -1,0 +1,6 @@
+schema_version: 1
+
+objective:
+  node_mask_probability: 0.50
+  bond_feature_mask_probability: 0.50
+  bond_dropout_probability: 0.20

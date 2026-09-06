@@ -1,0 +1,76 @@
+name: Uni-Dock Tools CI/CD
+on:
+  push:
+    branches:
+      - '**ci**'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    steps:
+    - uses: actions/checkout@v6
+    - name: Run ruff check
+      working-directory: ./unidock_tools
+      run: uvx ruff check
+
+  tests:
+    if: ${{ always() }}
+    needs: [ruff]
+    runs-on: nvidia
+    container:
+      image: nvidia/cuda:12.8.0-devel-ubuntu22.04
+      options: --gpus all -v /etc/apt/sources.list:/etc/apt/sources.list:ro
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: checkout repo
+      uses: actions/checkout@v6
+
+    - name: install unidock
+      working-directory: ./unidock
+      run: |
+        apt-get update && apt-get install -y build-essential cmake libboost-all-dev ninja-build git wget
+        mkdir build
+        cd build
+        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
+        cmake --build .
+        cmake --install .
+        cd ..
+
+    - name: install tools
+      working-directory: ./unidock_tools
+      run: |
+        wget --quiet -O CDPKit.sh https://github.com/molinfo-vienna/CDPKit/releases/download/v1.1.0/CDPKit-1.1.0-Linux-x86_64.sh
+        echo y | bash CDPKit.sh --cpack_skip_license --include-subdir
+        rm CDPKit.sh
+
+        wget --quiet -O conda.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh
+        bash conda.sh -b -p /opt/conda
+        rm conda.sh
+        export PATH=/opt/conda/bin:$PATH
+
+        mamba create -y -n unidock python=3.12 openbabel pytest pytest-cov -c conda-forge
+
+        printf 'source /opt/conda/etc/profile.d/conda.sh\nsource /opt/conda/etc/profile.d/mamba.sh\nmamba activate unidock\n' > /opt/activate_unidock.sh
+        echo "BASH_ENV=/opt/activate_unidock.sh" >> $GITHUB_ENV
+        echo "/opt/conda/envs/unidock/bin" >> $GITHUB_PATH
+        echo "/opt/conda/bin" >> $GITHUB_PATH
+
+        source /opt/activate_unidock.sh
+        pip install .
+
+    - name: run unit-test
+      working-directory: ./unidock_tools
+      run: |
+        pytest tests/ut -vv --cov --cov-report term
+
+    - name: run application e2e test
+      working-directory: ./unidock_tools
+      run: |
+        pytest tests/applications -vv --cov --cov-report term

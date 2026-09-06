@@ -1,0 +1,107 @@
+{
+  "config": {
+    "batch_sizes": [
+      1024,
+      4096,
+      8192,
+      16384,
+      20000
+    ],
+    "center": [
+      15.19,
+      53.903,
+      16.917
+    ],
+    "delimiter": "auto",
+    "device_id": 0,
+    "energy_range": 3.0,
+    "fragment_policy": "reject",
+    "id_column": null,
+    "input_format": "auto",
+    "input_path": "/tmp/igenvs-benchmark.MrgWof/rl_nonisomeric_20000.smi",
+    "max_gpu_memory": 0,
+    "num_modes": 1,
+    "prep_workers": 32,
+    "profile_path": "/tmp/igenvs-benchmark.MrgWof/fast-baseline.json",
+    "receptor": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/third_party/Uni-Dock/unidock/test/receptor/1iep_receptor.pdbqt",
+    "scoring": "vina",
+    "scratch_dir": "/tmp/igenvs-benchmark.MrgWof/scratch-fast-baseline",
+    "search_mode": "fast",
+    "seed": 401,
+    "size": [
+      20.0,
+      20.0,
+      20.0
+    ],
+    "smiles_column": "smiles",
+    "unidock_executable": "unidock"
+  },
+  "created_at": "2026-08-30T01:25:55.001064+00:00",
+  "hardware": {
+    "cpu_count": 72,
+    "cuda_visible_devices": "0",
+    "gpu": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "index": 0,
+      "memory_free_mib": 97260,
+      "memory_total_mib": 97871,
+      "name": "NVIDIA GH200 120GB",
+      "uuid": "GPU-35b2ba66-decc-2ad6-bcb2-8935183c6a0c"
+    },
+    "slurm_cpus_per_task": null,
+    "slurm_job_id": "1790333"
+  },
+  "measurements": [
+    {
+      "attempted": 1024,
+      "attempted_ligands_per_second": 66.13175148721074,
+      "batch_size": 1024,
+      "seconds": 15.484241335994739,
+      "success_fraction": 0.9970703125,
+      "successful": 1021,
+      "successful_ligands_per_second": 65.93800612152555
+    },
+    {
+      "attempted": 4096,
+      "attempted_ligands_per_second": 79.07412451088206,
+      "batch_size": 4096,
+      "seconds": 51.7994985760015,
+      "success_fraction": 0.99609375,
+      "successful": 4080,
+      "successful_ligands_per_second": 78.76524121201142
+    },
+    {
+      "attempted": 8192,
+      "attempted_ligands_per_second": 85.79665022589911,
+      "batch_size": 8192,
+      "seconds": 95.48158323700045,
+      "success_fraction": 0.9957275390625,
+      "successful": 8157,
+      "successful_ligands_per_second": 85.43008738924061
+    },
+    {
+      "attempted": 16384,
+      "attempted_ligands_per_second": 97.17398667294204,
+      "batch_size": 16384,
+      "seconds": 168.60479394700087,
+      "success_fraction": 0.9949951171875,
+      "successful": 16302,
+      "successful_ligands_per_second": 96.68764225722052
+    }
+  ],
+  "preparation_failures": 17,
+  "schema_version": 1,
+  "selected_batch_size": 16384,
+  "selection_rule": "smallest batch within 98% of peak successful throughput and >=99% success",
+  "validation": {
+    "dedup_database": "/tmp/igenvs-benchmark.MrgWof/scratch-fast-baseline/igenvs-tune-24hzyi47/validation/dedup.sqlite3",
+    "duplicates": 0,
+    "input": 20000,
+    "rejected": 0,
+    "rejected_path": "/tmp/igenvs-benchmark.MrgWof/scratch-fast-baseline/igenvs-tune-24hzyi47/validation/rejected.csv",
+    "valid": 20000,
+    "validated_path": "/tmp/igenvs-benchmark.MrgWof/scratch-fast-baseline/igenvs-tune-24hzyi47/validation/validated.csv",
+    "workers": 32
+  }
+}

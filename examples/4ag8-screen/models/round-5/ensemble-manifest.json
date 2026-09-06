@@ -1,0 +1,42 @@
+{
+  "architecture": "384-512-128_shared_trunk_with_top1_logit_and_rank_outputs_dropout_0.10",
+  "embedding_dimension": 384,
+  "embedding_space": "released_hybrid_w3",
+  "ensemble_size": 3,
+  "epochs": 7,
+  "members": [
+    {
+      "checkpoint": "models/round-5/seed-260904.pt",
+      "checkpoint_sha256": "bccc29161afb234e43f63a3bcbd552b7f201e4e40ba7f24a67e05071835ac78f",
+      "epochs": 7,
+      "seed": 260904
+    },
+    {
+      "checkpoint": "models/round-5/seed-260905.pt",
+      "checkpoint_sha256": "8741dd5dc21de9ace073fa1384ad0b96079197f61acea353523589597836eb94",
+      "epochs": 7,
+      "seed": 260905
+    },
+    {
+      "checkpoint": "models/round-5/seed-260906.pt",
+      "checkpoint_sha256": "c9f67e0422a4f2c17cd28af227e4af4952e970bc6a087c0472684fe0c920cc9c",
+      "epochs": 7,
+      "seed": 260906
+    }
+  ],
+  "parameter_count_per_member": 263042,
+  "protocol_sha256": "60f33c7646ea470b805b1a1611804276aac60e198018e7bb11b82bd7f8318ce0",
+  "restart_policy": "from_scratch",
+  "schema_version": 1,
+  "seeds": [
+    260904,
+    260905,
+    260906
+  ],
+  "stage": "round-5",
+  "standardizer": "phase-5-head-selection/artifacts/input-standardizer.npz",
+  "standardizer_sha256": "8271b8a836ded31686c20d14c4e4d1d6d2acb492144d05d2b6e22dc45887a6fd",
+  "status": "complete",
+  "target": "4ag8",
+  "winner": "wide_mlp_rank_aux"
+}

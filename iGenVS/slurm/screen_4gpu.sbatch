@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=igenvs
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --gpus-per-task=1
+#SBATCH --cpus-per-task=72
+#SBATCH --time=24:00:00
+#SBATCH --exclusive
+
+set -euo pipefail
+
+# Required: IGENVS_PROJECT, IGENVS_INPUT, IGENVS_OUTPUT.
+# Preferred pocket input: IGENVS_TARGET.
+# Expert fallback: IGENVS_RECEPTOR plus IGENVS_CENTER_X/Y/Z; AutoDock-GPU also
+# requires IGENVS_ADGPU_GRID.
+# Optional common controls: IGENVS_ENGINE, IGENVS_SCORING, IGENVS_SIZE_X/Y/Z,
+# IGENVS_SEARCH_MODE, IGENVS_BATCH_SIZE, IGENVS_BATCH_PROFILE, IGENVS_PREP_MODE,
+# IGENVS_PREP_WORKERS, IGENVS_VALIDATION_WORKERS, IGENVS_POSE_OUTPUT.
+# Uni-Dock: IGENVS_REFINE_STEP, IGENVS_UNIDOCK_VERBOSITY, IGENVS_NO_REFINE=1.
+# AutoDock-GPU: IGENVS_ADGPU_WORKERS, IGENVS_ADGPU_CPU_THREADS,
+# IGENVS_ADGPU_EXECUTABLE, IGENVS_ADGPU_RUNS, IGENVS_ADGPU_EVALUATIONS,
+# IGENVS_ADGPU_LOCAL_SEARCH, IGENVS_ADGPU_NO_HEURISTICS=1,
+# IGENVS_ADGPU_NO_AUTOSTOP=1, and IGENVS_ADGPU_MPS=1 above one worker.
+# Each task starts and cleans up its own MPS daemon for its assigned GPU.
+
+: "${IGENVS_PROJECT:?set IGENVS_PROJECT to the iGenVS repository}"
+
+export IGENVS_IMAGE="${IGENVS_IMAGE:-${IGENVS_PROJECT}/containers/iGenVS.SIF}"
+export IGENVS_NUM_SHARDS="${SLURM_NTASKS}"
+export OMP_NUM_THREADS="${IGENVS_OMP_THREADS:-${SLURM_CPUS_PER_TASK:-1}}"
+export IGENVS_PREP_WORKERS="${IGENVS_PREP_WORKERS:-${SLURM_CPUS_PER_TASK:-1}}"
+export IGENVS_VALIDATION_WORKERS="${IGENVS_VALIDATION_WORKERS:-${SLURM_CPUS_PER_TASK:-1}}"
+
+srun --ntasks="${SLURM_NTASKS}" --gpus-per-task=1 --gpu-bind=single:1 --cpu-bind=cores \
+  "${IGENVS_PROJECT}/slurm/screen_shard.sh"

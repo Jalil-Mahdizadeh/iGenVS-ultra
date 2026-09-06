@@ -1,0 +1,106 @@
+{
+  "aggregate_input_per_second_slurm_wall": 372.3636363636364,
+  "aggregate_successful_per_second_docking_span": 404.65596967846454,
+  "aggregate_successful_per_second_manifest_span": 376.64183469387405,
+  "aggregate_successful_per_second_slurm_wall": 370.4161931818182,
+  "batches_per_gpu": 2,
+  "created_at": "2026-08-30T03:51:37.481428+00:00",
+  "generation": {
+    "count": 262144,
+    "generator_output_per_second": 4899.4,
+    "generator_seconds": 53.5,
+    "model": "rl-nonisomeric",
+    "process_wall_seconds": 65.22,
+    "sequential_generation_plus_slurm_screen_successful_per_second": 339.0096461350459
+  },
+  "ligand_balance": {
+    "mean_heavy_atoms_range": [
+      22.0748,
+      22.1
+    ],
+    "mean_rotatable_bonds_range": [
+      4.0582,
+      4.0725
+    ]
+  },
+  "parallel_efficiency_vs_single_gpu_raw_peak_fraction": 0.9407935249736182,
+  "schema_version": 1,
+  "shards": [
+    {
+      "batches": 2,
+      "docking_failed": 303,
+      "docking_seconds": 639.7835024820088,
+      "elapsed_seconds": 689.924365748011,
+      "gpu_uuid": "GPU-3225b8b9-3482-d51c-f546-9eda84c59af5",
+      "preparation_cpu_seconds_sum": 2294.9194070563535,
+      "preparation_failed": 39,
+      "preparation_wait_seconds": 31.49493110201729,
+      "prepared": 65497,
+      "rate_docking": 101.90009549649697,
+      "rate_end_to_end": 94.49441596299782,
+      "screening_seconds": 677.7368188059918,
+      "shard": "shard-0",
+      "successful": 65194,
+      "validation_seconds": 2.201305640002829
+    },
+    {
+      "batches": 2,
+      "docking_failed": 299,
+      "docking_seconds": 644.4313677299942,
+      "elapsed_seconds": 692.1153879889898,
+      "gpu_uuid": "GPU-1542024c-5aed-929f-8225-a6c8460eee51",
+      "preparation_cpu_seconds_sum": 2332.2808922396653,
+      "preparation_failed": 41,
+      "preparation_wait_seconds": 27.61616552999476,
+      "prepared": 65495,
+      "rate_docking": 101.16825974758574,
+      "rate_end_to_end": 94.19816569811209,
+      "screening_seconds": 679.8859490560135,
+      "shard": "shard-1",
+      "successful": 65196,
+      "validation_seconds": 2.29989344200294
+    },
+    {
+      "batches": 2,
+      "docking_failed": 330,
+      "docking_seconds": 637.8311204619968,
+      "elapsed_seconds": 692.363343577992,
+      "gpu_uuid": "GPU-4667d033-c4ad-bf45-7f2c-9be112c92e73",
+      "preparation_cpu_seconds_sum": 2345.1872632528684,
+      "preparation_failed": 38,
+      "preparation_wait_seconds": 34.15458104699792,
+      "prepared": 65498,
+      "rate_docking": 102.17124550585932,
+      "rate_end_to_end": 94.12398938283636,
+      "screening_seconds": 680.1326453609945,
+      "shard": "shard-2",
+      "successful": 65168,
+      "validation_seconds": 2.2829142389964545
+    },
+    {
+      "batches": 2,
+      "docking_failed": 286,
+      "docking_seconds": 633.0175253250054,
+      "elapsed_seconds": 679.3562377469934,
+      "gpu_uuid": "GPU-df3b4fa5-9e49-4612-5f0c-87eb8f8bcb55",
+      "preparation_cpu_seconds_sum": 2211.04582068279,
+      "preparation_failed": 35,
+      "preparation_wait_seconds": 26.72783074299514,
+      "prepared": 65501,
+      "rate_docking": 103.02242416829954,
+      "rate_end_to_end": 95.99529138979871,
+      "screening_seconds": 667.1472334190039,
+      "shard": "shard-3",
+      "successful": 65215,
+      "validation_seconds": 2.26877938999678
+    }
+  ],
+  "slurm_elapsed_seconds": 704,
+  "slurm_job_id": 1793012,
+  "speedup_vs_short_80k_node_run": 1.206066854827281,
+  "success_fraction": 0.9947700500488281,
+  "total_docking_failed": 1218,
+  "total_input": 262144,
+  "total_preparation_failed": 153,
+  "total_successful": 260773
+}

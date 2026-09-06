@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "igen3"
+version = "0.1.0"
+description = "Transformer and RL-tuned iGen3 de novo and derivative SMILES generation."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "tqdm>=4.66",
+  "rdkit>=2024.3",
+  "matplotlib>=3.8",
+]
+
+[project.scripts]
+igen3 = "igen3.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

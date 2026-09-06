@@ -1,0 +1,86 @@
+# Local Python/tool state
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/*.egg-info/
+.venv/
+venv/
+.coverage
+
+# Runtime products and local images
+/runs/
+/outputs/
+*.sif
+*.SIF
+*.sandbox/
+*.log
+*.partial
+slurm-*.out
+
+# A checked-in example head is immutable; generated screens are not.
+/examples/4ag8-screen/screens/
+/examples/4ag8-screen/.igenvs-ultra/
+
+# Keep the public gMolAI inference/build surface, not its research workspaces.
+/gMolAI-v2.0/*
+!/gMolAI-v2.0/.dockerignore
+!/gMolAI-v2.0/.gitattributes
+!/gMolAI-v2.0/.gitignore
+!/gMolAI-v2.0/Dockerfile
+!/gMolAI-v2.0/README.md
+!/gMolAI-v2.0/pyproject.toml
+!/gMolAI-v2.0/requirements.lock
+!/gMolAI-v2.0/configs/
+!/gMolAI-v2.0/configs/**
+!/gMolAI-v2.0/inference/
+!/gMolAI-v2.0/inference/**
+!/gMolAI-v2.0/src/
+!/gMolAI-v2.0/src/**
+!/gMolAI-v2.0/tests/
+!/gMolAI-v2.0/tests/**
+
+# Generated benchmark payloads; protocols, scripts, and compact reports remain.
+/user-pipeline/benchmarks/results/
+/speed-bench/results/
+/speed-bench/audit/
+/speed-bench/logs/
+/speed-bench/inputs/*.csv
+/speed-bench/inputs/*.smi
+/speed-bench/protocol.freeze.log
+/speed-bench/audit-submit-dry-run.txt
+
+# Internal study workspaces are retained locally but are not release source.
+/Diagnostics/
+/post-diagnostics/
+/phase-1-udrl/
+/phase-2-al-sets/
+/phase-3-test-set/
+/phase-4-dev-docking/
+/phase-5-head-selection/*
+!/phase-5-head-selection/artifacts/
+/phase-5-head-selection/artifacts/*
+!/phase-5-head-selection/artifacts/input-standardizer.npz
+/phase-6-AL-validation/
+/phase-6-active-learning/
+/phase-6-beyond-AL-baseline/
+/phase-7-benchmark-docking/
+/phase-8-benchmark-models/
+/phase-9-benchmark-active-learning/
+
+# Internal planning and forensic reports (not required by the released tool).
+/Diagnostics.md
+/post-Diagnostics.md
+/Phase-6-Beyond-AL-Baseline.md
+/FINAL-REPORT.md
+/god-plan.md
+
+# Editor/OS noise and local secrets
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example

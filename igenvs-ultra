@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+export IGENVS_ULTRA_ASSETS="${IGENVS_ULTRA_ASSETS:-${project_root}}"
+export IGENVS_DOCKER_IMAGE="${IGENVS_DOCKER_IMAGE:-igenvs-ultra/igenvs:latest}"
+export GMOLAI_DOCKER_IMAGE="${GMOLAI_DOCKER_IMAGE:-igenvs-ultra/gmolai:latest}"
+
+exec python3 "${project_root}/user-pipeline/igenvs-ultra" "$@"

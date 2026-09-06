@@ -1,0 +1,87 @@
+{
+  "cold_policy": "fresh output and empty run-private performance-profile cache; one sample per case",
+  "containers": {
+    "gmolai": {
+      "mtime_ns": 1786047483000000000,
+      "path": "/nobackup/proj/disk/theo-storage/personal/jalil/gMolAI/containers/gmolai-pyg-25.09-arm64.sif",
+      "sha256": "69cfad3e38de6397a94184a132a84d44bea8d1f8f258a1b80ba6a5dca5c714e2",
+      "size_bytes": 11128963072
+    },
+    "igenvs": {
+      "mtime_ns": 1788094961000000000,
+      "path": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/containers/iGenVS.SIF",
+      "sha256": "5be26995a1597d07846f33a351df3aac628c133cd775b7af34d25ae7501148a9",
+      "size_bytes": 6030950400
+    }
+  },
+  "docking": {
+    "engine_modes": {
+      "autodock-gpu": [
+        "fast"
+      ],
+      "unidock": [
+        "fast",
+        "balance",
+        "detail"
+      ]
+    },
+    "performance_settings": "all auto",
+    "pose_output": "none",
+    "rows_per_gpu": 20000,
+    "target": "phase-7-benchmark-docking/targets/4ag8"
+  },
+  "fixture_sampling": {
+    "seed": 2026090601,
+    "temperature": 1.0,
+    "top_k": 64
+  },
+  "gpu_counts": [
+    1,
+    2,
+    4
+  ],
+  "hardware": "Arrhenius NVIDIA GH200 120GB",
+  "locked_asset_trees": {
+    "gMolAI-v2.0/inference/models": "d3603c6ac3d8995f7dd1de7867638dbd1e9edb59837bb455ba9db22e05b94973",
+    "iGenVS/iGen3/models": "ff1a4ef33539d7d767586209dd7707a2d54ef99a109fe8dde1a441c9ac23e04e",
+    "phase-7-benchmark-docking/targets/4ag8": "7ec68b10ef793584e35ff4813ca1f2d2aad47755ae8178b4f0922bf698e50d91",
+    "phase-9-benchmark-active-learning/rounds/round-5/models": "bed272e4a2563165126ac26c437f23d8c4ed8b4826ba8d00d7799bab88220194"
+  },
+  "locked_at": "2026-09-06T15:12:44.830322+00:00",
+  "locked_files": {
+    "phase-5-head-selection/artifacts/input-standardizer.npz": "8271b8a836ded31686c20d14c4e4d1d6d2acb492144d05d2b6e22dc45887a6fd",
+    "phase-7-benchmark-docking/targets/4ag8/manifest.json": "4436f68a05a53b28632b115af2dea4700736dff11d9d5d6e79e06f2278242297",
+    "phase-9-benchmark-active-learning/rounds/round-5/models/ensemble-manifest.json": "c95b1adb6757a2da9bde839c6238c2e5a4b66759cbcda7bc4fd86eccbc838458",
+    "speed-bench/inputs/fixed-20k.csv": "501e2d36c62467530c6242828a19f6d37566b805bea9ea978460d56e34d52615",
+    "speed-bench/inputs/fixed-40k.csv": "76e2ea6aeca8dfd9be1f0de30149dddccda8d2225100a7abeb562058c019f613",
+    "speed-bench/inputs/fixed-80k.csv": "c33f286563d33aee0c9a0da962f63a6fc16245a644e16ac39a305bb0c205a056",
+    "speed-bench/inputs/fixed-libraries.manifest.json": "e64507a8e99bea6489b92a7869584caa1300167425d62c1c842722cca6004cd8",
+    "speed-bench/plan.md": "c8d24edad178f53b79f84c9af31a9f8319308e66ea920920d1b8bfbc7677c21b",
+    "user-pipeline/igenvs-ultra": "88d2543d443bad699ba1e5c983f9174ac36108e2e30b3a7fd2509503de003b59"
+  },
+  "locked_source_trees": {
+    "gMolAI-v2.0": "e61e7e0ef47ae93f59601d5b3f64f89814538a9791e20b386aaaef07bd098cd2",
+    "iGenVS/iGen3/src/igen3": "674023ce5ca5f42aeb6f028d33988d69f35dd216a54df9919bd992e9cc80f45e",
+    "iGenVS/src/igenvs": "a76ddee20e604e84fdea03394497ce55f842474fcc1a9f845674f9482cf6f484",
+    "speed-bench/scripts": "20326a3a3b00f9c643a037c7cccf8160f708499ca6aab9ab2369841a10b92ec5",
+    "speed-bench/slurm": "df530f23987c1cd2605982c2730f262d569998975dfcebcb734695e9b4a415fe",
+    "user-pipeline/src/igenvs_ultra": "fb0acc7f6a7643a57d3fabc23720acd9f0c3248cd73df9e6ae373439453ee4f7"
+  },
+  "primary_metrics": {
+    "docking_engine_per_hour": "finite successful rows / slowest concurrent engine wall",
+    "docking_input_per_hour": "all input rows / public-wrapper complete wall",
+    "docking_successful_per_hour": "finite successful rows / public-wrapper complete wall",
+    "screening_per_hour": "exact finite committed and saved scores / count-only invocation complete wall"
+  },
+  "schema_version": 3,
+  "screening": {
+    "committed_finite_scores": 10000000,
+    "cross_batch_overlap": true,
+    "generator": "iGen3 base-isomeric de-novo",
+    "model": "4ag8 AL round-5",
+    "performance_settings": "all auto through screen-fast count-only interface",
+    "sampling": "public screen-fast defaults; molecule count is the only argument",
+    "save_policy": "all"
+  },
+  "status": "locked_before_execution"
+}

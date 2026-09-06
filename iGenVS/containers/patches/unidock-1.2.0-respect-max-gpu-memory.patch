@@ -1,0 +1,7 @@
+--- a/src/main/main.cpp
++++ b/src/main/main.cpp
+@@ -977,1 +977,3 @@
+-                max_gpu_memory = avail / 1024 / 1024 * 0.95;  // leave 5%
++                if (max_gpu_memory <= 0) {
++                    max_gpu_memory = avail / 1024 / 1024 * 0.95;  // leave 5%
++                }

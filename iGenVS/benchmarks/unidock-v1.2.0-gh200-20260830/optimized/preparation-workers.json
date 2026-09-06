@@ -1,0 +1,42 @@
+[
+  {
+    "mode": "standard",
+    "workers": 32,
+    "attempted": 8192,
+    "prepared": 8187,
+    "failed": 5,
+    "seconds": 18.72240120999777,
+    "prepared_per_second": 437.2836533183649,
+    "cpu_seconds_sum": 341.43149540780723
+  },
+  {
+    "mode": "standard",
+    "workers": 64,
+    "attempted": 8192,
+    "prepared": 8187,
+    "failed": 5,
+    "seconds": 16.861684757997864,
+    "prepared_per_second": 485.53867051254934,
+    "cpu_seconds_sum": 402.0883392232063
+  },
+  {
+    "mode": "fast",
+    "workers": 32,
+    "attempted": 8192,
+    "prepared": 8187,
+    "failed": 5,
+    "seconds": 15.890067304004333,
+    "prepared_per_second": 515.2275219084099,
+    "cpu_seconds_sum": 199.23738631059678
+  },
+  {
+    "mode": "fast",
+    "workers": 64,
+    "attempted": 8192,
+    "prepared": 8187,
+    "failed": 5,
+    "seconds": 15.868995627002732,
+    "prepared_per_second": 515.9116677850094,
+    "cpu_seconds_sum": 289.20269594592537
+  }
+]

@@ -1,0 +1,86 @@
+{
+  "config": {
+    "autodock_gpu_autostop": true,
+    "autodock_gpu_cpu_threads": 4,
+    "autodock_gpu_evaluations": null,
+    "autodock_gpu_executable": "autodock_gpu_64wi",
+    "autodock_gpu_heuristics": true,
+    "autodock_gpu_local_search": "ad",
+    "autodock_gpu_runs": null,
+    "autodock_gpu_workers": 6,
+    "engine": "autodock-gpu",
+    "pose_output": "none",
+    "prep_mode": "standard",
+    "search_mode": "fast"
+  },
+  "created_at": "2026-08-30T12:19:16.878607+00:00",
+  "engine": "autodock-gpu",
+  "hardware": {
+    "cpu_count": 72,
+    "cuda_mps_active_thread_percentage": null,
+    "cuda_mps_required": true,
+    "gpu": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "memory_total_mib": 97871,
+      "name": "NVIDIA GH200 120GB"
+    }
+  },
+  "measurements": [
+    {
+      "attempted": 512,
+      "batch_size": 512,
+      "preparation_yield_fraction": 1.0,
+      "seconds": 46.13457263298915,
+      "success_fraction": 1.0,
+      "successful": 512,
+      "successful_ligands_per_second": 11.097967766453037,
+      "worker_seconds_sum": 263.46859075802786
+    },
+    {
+      "attempted": 1024,
+      "batch_size": 1024,
+      "preparation_yield_fraction": 1.0,
+      "seconds": 88.37169749100576,
+      "success_fraction": 1.0,
+      "successful": 1024,
+      "successful_ligands_per_second": 11.587420283561036,
+      "worker_seconds_sum": 511.46808002798934
+    },
+    {
+      "attempted": 2048,
+      "batch_size": 2048,
+      "preparation_yield_fraction": 1.0,
+      "seconds": 172.27789195800142,
+      "success_fraction": 1.0,
+      "successful": 2048,
+      "successful_ligands_per_second": 11.887770257249661,
+      "worker_seconds_sum": 1008.1927427170012
+    },
+    {
+      "attempted": 4093,
+      "batch_size": 4096,
+      "preparation_yield_fraction": 0.999267578125,
+      "seconds": 338.72423028400226,
+      "success_fraction": 1.0,
+      "successful": 4093,
+      "successful_ligands_per_second": 12.083576059994991,
+      "worker_seconds_sum": 2010.8529204939841
+    }
+  ],
+  "notes": [
+    "Target-specific throughput profile; retune after changing hardware, maps, chemistry, search controls, or pose output.",
+    "Workers above one require a running CUDA MPS daemon and CUDA_MPS_PIPE_DIRECTORY.",
+    "Measurements use the corrected outward-rounded full-coverage AD4 grid."
+  ],
+  "schema_version": 2,
+  "scoring_function": "ad4",
+  "selected_autodock_gpu_workers": 6,
+  "selected_batch_size": 4096,
+  "selection_rule": "highest measured successful throughput among batches with >=99% success; smallest batch breaks ties",
+  "target_fingerprint": {
+    "autodock_gpu_fld_sha256": "b655e2aa80a1df55058957d826c568259124439ff9aed365761a0f16eafb5c00",
+    "pocket_sha256": "9cced296d520709af54209aeef2eda9f656cca030a8c6d00a1d5802278afdf3c",
+    "receptor_sha256": "882874a97ba4f12dfa286963b6139a7b153051e10a6b393d8333ddd87b193e17"
+  }
+}

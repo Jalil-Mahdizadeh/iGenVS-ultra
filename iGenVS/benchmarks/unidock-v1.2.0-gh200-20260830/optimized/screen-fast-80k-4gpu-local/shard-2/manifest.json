@@ -1,0 +1,129 @@
+{
+  "completed_at": "2026-08-30T03:14:58.688931+00:00",
+  "config": {
+    "batch_profile": null,
+    "center": [
+      15.19,
+      53.903,
+      16.917
+    ],
+    "deduplicate": true,
+    "delimiter": "auto",
+    "device_id": 0,
+    "docking_batch_size": 32768,
+    "energy_range": 3.0,
+    "fragment_policy": "reject",
+    "generation": null,
+    "id_column": null,
+    "individual_poses": false,
+    "input_format": "auto",
+    "input_path": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/benchmarks/unidock-v1.2.0-gh200-20260830/library-rl-nonisomeric-80000.smi",
+    "keep_work": false,
+    "max_atoms": 300,
+    "max_gpu_memory": 0,
+    "max_torsions": 48,
+    "no_refine": false,
+    "num_modes": 1,
+    "num_shards": 4,
+    "output_dir": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/benchmarks/unidock-v1.2.0-gh200-20260830/optimized/screen-fast-80k-4gpu-local/shard-2",
+    "pose_output": "none",
+    "prep_mode": "standard",
+    "prep_workers": 64,
+    "receptor": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/third_party/Uni-Dock/unidock/test/receptor/1iep_receptor.pdbqt",
+    "refine_step": 3,
+    "scoring": "vina",
+    "scratch_dir": null,
+    "search_mode": "fast",
+    "seed": 181129,
+    "shard_index": 2,
+    "size": [
+      20.0,
+      20.0,
+      20.0
+    ],
+    "smiles_column": "smiles",
+    "unidock_executable": "unidock",
+    "unidock_verbosity": 0,
+    "validation_workers": 32
+  },
+  "counts": {
+    "batches": 1,
+    "docked": 19884,
+    "docking_failed": 101,
+    "preparation_failed": 15,
+    "prepared": 19985
+  },
+  "elapsed_seconds": 246.7646251069964,
+  "hardware": {
+    "cpu_count": 72,
+    "cuda_visible_devices": "0",
+    "gpu": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "index": 0,
+      "memory_free_mib": 97280,
+      "memory_total_mib": 97871,
+      "name": "NVIDIA GH200 120GB",
+      "uuid": "GPU-56c5acfd-d18e-d073-5cd5-2f4c2f04e647"
+    },
+    "slurm_cpus_per_task": "72",
+    "slurm_job_id": "1792955"
+  },
+  "outputs": {
+    "manifest": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/benchmarks/unidock-v1.2.0-gh200-20260830/optimized/screen-fast-80k-4gpu-local/shard-2/manifest.json",
+    "poses": null,
+    "results": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/benchmarks/unidock-v1.2.0-gh200-20260830/optimized/screen-fast-80k-4gpu-local/shard-2/results.csv"
+  },
+  "performance": {
+    "input_ligands_per_second_end_to_end": 81.04889422998966,
+    "successful_ligands_per_second_docking_invocations": 99.2390759639045,
+    "successful_ligands_per_second_end_to_end": 80.57881064345571,
+    "successful_ligands_per_second_screening": 84.31919791829623
+  },
+  "receptor": {
+    "path": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/third_party/Uni-Dock/unidock/test/receptor/1iep_receptor.pdbqt",
+    "sha256": "761469710e3915b89b274483076dfe49754be7956661bc42f4cc36a182399d59"
+  },
+  "runtime": {
+    "docking_batch_size": 32768,
+    "docking_batch_source": "explicit",
+    "double_buffered_preparation": true,
+    "no_refine": false,
+    "pose_output": "none",
+    "preparation_mode": "standard",
+    "preparation_workers": 64,
+    "refine_step": 3,
+    "unidock_verbosity": 0
+  },
+  "schema_version": 1,
+  "source": {
+    "format": "auto",
+    "path": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/benchmarks/unidock-v1.2.0-gh200-20260830/library-rl-nonisomeric-80000.smi"
+  },
+  "started_at": "2026-08-30T03:10:51.924334+00:00",
+  "status": "complete",
+  "timings": {
+    "cleanup_seconds": 0.39256166899576783,
+    "docking_invocation_seconds": 200.3646225729899,
+    "generation_seconds": 0.0,
+    "preparation_cpu_seconds_sum": 831.1202198326937,
+    "preparation_wait_seconds": 32.0916865850013,
+    "result_processing_seconds": 0.11388706600700971,
+    "screening_seconds": 235.81818246500916,
+    "validation_seconds": 1.0923669909971068
+  },
+  "tools": {
+    "igen3": "model_id family stereochemistry  seq_len  de_novo_temperature  derivative_temperature                                                     description",
+    "unidock": "Uni-Dock v1.2.0"
+  },
+  "validation": {
+    "dedup_database": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/benchmarks/unidock-v1.2.0-gh200-20260830/optimized/screen-fast-80k-4gpu-local/shard-2/validation/dedup.sqlite3",
+    "duplicates": 0,
+    "input": 20000,
+    "rejected": 0,
+    "rejected_path": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/benchmarks/unidock-v1.2.0-gh200-20260830/optimized/screen-fast-80k-4gpu-local/shard-2/validation/rejected.csv",
+    "valid": 20000,
+    "validated_path": "/nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/benchmarks/unidock-v1.2.0-gh200-20260830/optimized/screen-fast-80k-4gpu-local/shard-2/validation/validated.csv",
+    "workers": 32
+  }
+}

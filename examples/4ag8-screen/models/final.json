@@ -1,0 +1,7 @@
+{
+  "ensemble_manifest": "models/round-5/ensemble-manifest.json",
+  "ensemble_manifest_sha256": "046682eb1d7ead9acc0fffb58b331bbc2e008aa0f31ea6fe88fcaca4633d81c8",
+  "schema_version": 1,
+  "stage": "round-5",
+  "status": "complete"
+}

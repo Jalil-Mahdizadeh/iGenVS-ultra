@@ -1,0 +1,20 @@
+name: release checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  source-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Verify LFS checkout
+        run: git lfs fsck
+      - name: Run release checks
+        run: ./scripts/check-release.sh

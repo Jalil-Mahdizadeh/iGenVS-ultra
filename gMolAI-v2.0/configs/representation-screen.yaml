@@ -1,0 +1,13 @@
+schema_version: 1
+
+training:
+  max_steps: 5000
+  learning_rate: 0.0003
+  min_learning_rate: 0.000003
+  warmup_steps: 500
+  checkpoint_every_steps: 500
+  validate_every_steps: 500
+  log_every_steps: 100
+  validation_max_graphs: 20000
+  test_max_graphs: 20000
+  resume: never

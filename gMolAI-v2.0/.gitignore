@@ -1,0 +1,61 @@
+# Generated datasets, manifests, caches, checkpoints, and evaluation artifacts.
+# The compact external-review records and exact promoted model already tracked
+# under runs/ are deliberate exceptions; these rules keep future bulk output out.
+work/
+runs/
+gMolAI-retrain/
+
+# Slurm output and container images.
+slurm-outs/
+slurm-*.out
+*.sif
+*.log
+
+# Large generated ML/data artifacts (defense in depth).
+*.pt
+*.pth
+*.ckpt
+*.feather
+*.arrow
+*.parquet
+*.npy
+*.npz
+
+# Python/tool caches.
+__pycache__/
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+*.py[cod]
+
+# Graphify's portable graph/report are versioned; interpreter markers,
+# extraction caches, and in-progress refresh state are machine-local.
+graphify-out/cache/
+graphify-out/.graphify_python
+graphify-out/.graphify_root
+graphify-out/.vocab.txt
+graphify-out/.graphify_ast.json
+graphify-out/.graphify_detect.json
+graphify-out/.graphify_incremental.json
+graphify-out/.graphify_cached.json
+graphify-out/.graphify_uncached.txt
+graphify-out/.graphify_semantic.json
+graphify-out/.graphify_semantic_new.json
+graphify-out/.graphify_extract.json
+graphify-out/.graphify_analysis.json
+graphify-out/.graphify_old.json
+graphify-out/.graphify_chunk_*.json
+# Dated snapshots are local rollback copies created by incremental refreshes.
+graphify-out/20??-??-??/
+
+# Inference outputs are local products. The exact packaged encoder/calibrator
+# and Git-LFS decoder export are intentional exceptions to the checkpoint rule.
+inference/output/*
+!inference/output/.gitkeep
+!inference/models/representation-best.pt
+!inference/models/representation-calibrator.pt
+!inference/models/decoder_inference.pt

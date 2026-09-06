@@ -1,0 +1,5 @@
+schema_version: 1
+
+objective:
+  variance_weight: 2.0
+  covariance_weight: 0.08

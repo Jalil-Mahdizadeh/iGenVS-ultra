@@ -1,0 +1,2 @@
+# The compact frozen decoder exceeds GitHub's ordinary 100 MiB object limit.
+inference/models/decoder_inference.pt filter=lfs diff=lfs merge=lfs -text

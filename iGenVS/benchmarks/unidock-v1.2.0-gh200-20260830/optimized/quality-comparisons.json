@@ -1,0 +1,73 @@
+{
+  "comparisons": {
+    "refine_step_3_vs_1": {
+      "common": 19665,
+      "score_a_max": 243.133957,
+      "score_a_min": -11.6153,
+      "score_b_max": 217.544067,
+      "score_b_min": -11.6153,
+      "spearman_r": 0.9972323341466142,
+      "top_0.1pct_n": 20,
+      "top_0.1pct_overlap_fraction": 1.0,
+      "top_1pct_n": 197,
+      "top_1pct_overlap_fraction": 0.9898477157360406,
+      "top_5pct_n": 983,
+      "top_5pct_overlap_fraction": 0.9918616480162767
+    },
+    "refined_vs_no_refine": {
+      "common": 19892,
+      "score_a_max": 270.461487,
+      "score_a_min": -11.589711,
+      "score_b_max": 38047160.0,
+      "score_b_min": -11.101063,
+      "spearman_r": 0.9833741235680704,
+      "top_0.1pct_n": 20,
+      "top_0.1pct_overlap_fraction": 0.8,
+      "top_1pct_n": 199,
+      "top_1pct_overlap_fraction": 0.8341708542713567,
+      "top_5pct_n": 995,
+      "top_5pct_overlap_fraction": 0.8723618090452261
+    },
+    "standard_vs_fast_preparation": {
+      "common": 19801,
+      "score_a_max": 243.133957,
+      "score_a_min": -11.6153,
+      "score_b_max": 270.461487,
+      "score_b_min": -11.589711,
+      "spearman_r": 0.7705255399380472,
+      "top_0.1pct_n": 20,
+      "top_0.1pct_overlap_fraction": 0.45,
+      "top_1pct_n": 198,
+      "top_1pct_overlap_fraction": 0.398989898989899,
+      "top_5pct_n": 990,
+      "top_5pct_overlap_fraction": 0.5080808080808081
+    }
+  },
+  "runs": {
+    "no_refine_fast_prep": {
+      "docking_seconds": 182.50972736500262,
+      "elapsed_seconds": 214.72616766000283,
+      "rate_end_to_end": 93.062714329448,
+      "successful": 19983
+    },
+    "refine_step_1_standard_prep": {
+      "docking_failed": 317,
+      "docking_seconds": 197.91133008200268,
+      "elapsed_seconds": 231.1069091909958,
+      "rate_end_to_end": 85.09481637239693,
+      "successful": 19666
+    },
+    "refined_fast_prep": {
+      "docking_seconds": 199.00854157700087,
+      "elapsed_seconds": 231.25463230499736,
+      "rate_end_to_end": 86.01773638750214,
+      "successful": 19892
+    },
+    "refined_standard_prep": {
+      "docking_seconds": 197.9296699999977,
+      "elapsed_seconds": 231.1360300200031,
+      "rate_end_to_end": 85.98832470333582,
+      "successful": 19875
+    }
+  }
+}

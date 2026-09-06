@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "igenvs"
+version = "0.2.0"
+description = "High-throughput iGen3 virtual screening with Uni-Dock and AutoDock-GPU."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "gemmi>=0.7,<0.8",
+  "meeko==0.8.0",
+  "numpy>=1.26,<3",
+  "rdkit>=2024.3",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[project.scripts]
+igenvs = "igenvs.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]

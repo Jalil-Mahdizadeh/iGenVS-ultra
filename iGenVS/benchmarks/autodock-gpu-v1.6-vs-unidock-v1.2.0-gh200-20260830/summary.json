@@ -1,0 +1,289 @@
+{
+  "comparison": {
+    "four_gpu": {
+      "autodock_gpu": {
+        "docked": 79952,
+        "docking_failed": 0,
+        "input": 80000,
+        "preparation_failed": 48,
+        "prepared": 79952,
+        "slurm_elapsed_seconds": 1707,
+        "slurm_job_id": 1799455,
+        "successful_input_fraction": 0.9994,
+        "successful_per_second_slurm_wall": 46.83772700644405
+      },
+      "autodock_gpu_parallel_efficiency_vs_one_gpu_end_to_end": 0.984068954374,
+      "autodock_gpu_speedup_vs_one_gpu_end_to_end": 3.936275817496,
+      "input": 80000,
+      "unidock": {
+        "docked": 79606,
+        "docking_failed": 346,
+        "input": 80000,
+        "preparation_failed": 48,
+        "prepared": 79952,
+        "slurm_elapsed_seconds": 259,
+        "slurm_job_id": 1799196,
+        "successful_input_fraction": 0.995075,
+        "successful_per_second_slurm_wall": 307.35907335907336
+      },
+      "unidock_over_autodock_gpu_slurm_rate_ratio": 6.562211554732
+    },
+    "one_gpu": {
+      "autodock_gpu": {
+        "docked": 19983,
+        "docking_failed": 0,
+        "docking_wall_seconds": 1659.0129797249829,
+        "elapsed_seconds": 1679.385501568002,
+        "input": 20000,
+        "preparation_failed": 17,
+        "prepared": 19983,
+        "screening_seconds": 1671.8404724980064,
+        "successful_input_fraction": 0.99915,
+        "successful_per_second_docking_wall": 12.045113717743554,
+        "successful_per_second_end_to_end": 11.898995186836109,
+        "successful_per_second_screening": 11.95269544476459
+      },
+      "unidock": {
+        "docked": 19906,
+        "docking_failed": 77,
+        "docking_wall_seconds": 198.48318921199825,
+        "input": 20000,
+        "preparation_failed": 17,
+        "prepared": 19983,
+        "screening_seconds": 224.8458361410012,
+        "successful_input_fraction": 0.9953,
+        "successful_per_second_docking_wall": 100.29060939129997,
+        "successful_per_second_end_to_end": 86.77425901075453,
+        "successful_per_second_screening": 88.53177066404251
+      },
+      "unidock_over_autodock_gpu_docking_rate_ratio": 8.326248447415,
+      "unidock_over_autodock_gpu_end_to_end_rate_ratio": 7.292570309361
+    },
+    "scope": "Throughput and finite-output yield only. Engine-specific fast search protocols and Vina versus AD4 scores are not scientific or numeric equivalents."
+  },
+  "container": {
+    "architecture": "aarch64",
+    "autodock_gpu_default_work_items": 64,
+    "bytes": 6030950400,
+    "cuda": "12.8",
+    "cuda_architecture": "sm_90",
+    "igenvs_version": "0.2.0",
+    "path": "containers/iGenVS.SIF",
+    "sha256": "5be26995a1597d07846f33a351df3aac628c133cd775b7af34d25ae7501148a9"
+  },
+  "created_at": "2026-08-30T13:10:00+00:00",
+  "four_gpu_shards": {
+    "autodock_gpu": [
+      {
+        "docked": 19988,
+        "docking_failed": 0,
+        "docking_wall_seconds": 1653.2918605709856,
+        "elapsed_seconds": 1680.168699781003,
+        "prepared": 19988,
+        "shard": 0
+      },
+      {
+        "docked": 19992,
+        "docking_failed": 0,
+        "docking_wall_seconds": 1664.9775727620581,
+        "elapsed_seconds": 1679.9088113569887,
+        "prepared": 19992,
+        "shard": 1
+      },
+      {
+        "docked": 19985,
+        "docking_failed": 0,
+        "docking_wall_seconds": 1658.7944515480194,
+        "elapsed_seconds": 1694.8053910680173,
+        "prepared": 19985,
+        "shard": 2
+      },
+      {
+        "docked": 19987,
+        "docking_failed": 0,
+        "docking_wall_seconds": 1654.4205197170086,
+        "elapsed_seconds": 1683.8281977369916,
+        "prepared": 19987,
+        "shard": 3
+      }
+    ],
+    "unidock": [
+      {
+        "docked": 19908,
+        "docking_failed": 80,
+        "docking_wall_seconds": 207.83498075298849,
+        "elapsed_seconds": 244.80179144899012,
+        "prepared": 19988,
+        "shard": 0
+      },
+      {
+        "docked": 19898,
+        "docking_failed": 94,
+        "docking_wall_seconds": 199.76409915299155,
+        "elapsed_seconds": 246.34995879998314,
+        "prepared": 19992,
+        "shard": 1
+      },
+      {
+        "docked": 19887,
+        "docking_failed": 98,
+        "docking_wall_seconds": 200.62115267600166,
+        "elapsed_seconds": 245.4288327830145,
+        "prepared": 19985,
+        "shard": 2
+      },
+      {
+        "docked": 19913,
+        "docking_failed": 74,
+        "docking_wall_seconds": 199.83468701300444,
+        "elapsed_seconds": 231.76066463801544,
+        "prepared": 19987,
+        "shard": 3
+      }
+    ]
+  },
+  "hardware": {
+    "compute_capability": "9.0",
+    "cpu_cores_per_gpu_task": 72,
+    "driver_version": "580.159.04",
+    "gpu": "NVIDIA GH200 120GB",
+    "memory_total_mib": 97871
+  },
+  "protocol": {
+    "autodock_gpu": {
+      "autostop": true,
+      "cpu_threads_per_worker": 4,
+      "evaluations": null,
+      "heuristics": true,
+      "lga_runs": 10,
+      "local_search": "ad",
+      "outer_batch_size": 4096,
+      "scoring": "ad4",
+      "search_mode": "fast",
+      "work_items": 64,
+      "workers": 6
+    },
+    "common": {
+      "docking_seed": 181129,
+      "input": "iGen3 rl-nonisomeric valid unique external SMILES",
+      "num_modes": 1,
+      "pose_output": "none",
+      "preparation": "standard RDKit/Meeko",
+      "preparation_workers": 64,
+      "validation_workers": 32
+    },
+    "unidock": {
+      "no_refine": false,
+      "outer_batch_size": 32768,
+      "refine_step": 3,
+      "scoring": "vina",
+      "search_mode": "fast"
+    }
+  },
+  "schema_version": 1,
+  "sources": {
+    "autodock_gpu": {
+      "commit": "e63e6f6280ebfad18caa3e8f48afdc269e79e063",
+      "version": "1.6"
+    },
+    "autogrid": {
+      "commit": "6d2847beaeac8ff43ca99094707fd74e3ca1ff37",
+      "embedded_runtime_banner": "AutoGrid 4.2.7.x",
+      "source_tag": "4.2.9"
+    },
+    "igen3": {
+      "commit": "9fc8fb4e3337712dda77e7614215f765e56f998b",
+      "models": [
+        "base-isomeric",
+        "base-nonisomeric",
+        "rl-isomeric",
+        "rl-nonisomeric"
+      ]
+    },
+    "unidock": {
+      "commit": "95e409172b15dec0989aea70b0f2328e8ca52025",
+      "version": "1.2.0"
+    }
+  },
+  "target": {
+    "autodock_gpu_fld_sha256": "b655e2aa80a1df55058957d826c568259124439ff9aed365761a0f16eafb5c00",
+    "grid_center": [
+      15.19,
+      53.903,
+      16.917
+    ],
+    "grid_npts": [
+      50,
+      72,
+      64
+    ],
+    "grid_size": [
+      18.75,
+      27.0,
+      24.0
+    ],
+    "grid_spacing": 0.375,
+    "manifest_sha256": "f6f0f38750311d4c31069864f02435dfd697c7c972acb701c41e48920814a367",
+    "pocket_sha256": "9cced296d520709af54209aeef2eda9f656cca030a8c6d00a1d5802278afdf3c",
+    "receptor_sha256": "882874a97ba4f12dfa286963b6139a7b153051e10a6b393d8333ddd87b193e17",
+    "requested_center": [
+      15.19,
+      53.9025,
+      16.917
+    ],
+    "requested_size": [
+      18.664,
+      26.739,
+      23.526
+    ]
+  },
+  "tuning": {
+    "corrected_grid_measurements": [
+      {
+        "batch_size": 512,
+        "seconds": 46.13457263298915,
+        "successful": 512,
+        "successful_per_second": 11.097967766453037
+      },
+      {
+        "batch_size": 1024,
+        "seconds": 88.37169749100576,
+        "successful": 1024,
+        "successful_per_second": 11.587420283561036
+      },
+      {
+        "batch_size": 2048,
+        "seconds": 172.27789195800142,
+        "successful": 2048,
+        "successful_per_second": 11.887770257249661
+      },
+      {
+        "batch_size": 4096,
+        "seconds": 338.72423028400226,
+        "successful": 4093,
+        "successful_per_second": 12.083576059994991
+      }
+    ],
+    "gain_4096_over_512_fraction": 0.088809799621,
+    "profile": "profiles/gh200-adgpu-fast.json",
+    "selected_autodock_gpu_workers": 6,
+    "selected_batch_size": 4096
+  },
+  "validation": {
+    "autodock_gpu_real_smoke": {
+      "docked": 3,
+      "docking_failed": 0,
+      "pose_output": "merged"
+    },
+    "doctor_ok": true,
+    "fresh_dual_engine_target": true,
+    "igen3_promoted_sif_valid_unique_per_model": 8,
+    "igen3_release_candidate_valid_unique_per_model": 32,
+    "packaged_tests_passed": 47,
+    "unidock_real_smoke": {
+      "docked": 3,
+      "docking_failed": 0,
+      "pose_output": "none"
+    }
+  }
+}
