@@ -1,7 +1,8 @@
 # Portable regular-docking optimization results
 
-Status: one-GPU smoke and medium qualification complete on 2026-09-06. The
-definitive cold/sustained 1/2/4-GPU benchmark was intentionally not run.
+Status: one-GPU smoke/medium qualification and the requested cold 1/2/4-GPU
+matrix are complete as of 2026-09-06. A separate larger sustained/cache/pose
+study remains optional follow-on work, not an unfinished release benchmark.
 
 ## Boundary and hardware
 
@@ -15,7 +16,8 @@ refinement, no pose persistence, and automatic batching/workers.
 The qualification node was `n191`: one visible NVIDIA GH200 120GB (97,871 MiB
 reported), 72 CPUs in the process affinity, driver 580.159.04, and Slurm job
 2071150. These measurements establish correctness and a medium performance
-signal; another GPU should use its own automatic plan and later full benchmark.
+signal. The later full cold matrix used separate 1/2/4-GPU allocations; other
+hardware should still use its own automatic plan.
 
 ## Smoke tests
 
@@ -37,25 +39,25 @@ durable merged pose stream.
 
 The medium suite uses the same first 4,096 input rows for every case:
 
-| Engine / mode | Prepared | Successful | Prep wait | Engine wall | Complete wall | Input/h | Old locked input/h | Delta |
+| Engine / mode | Prepared | Successful | Prep wait | Engine wall | Complete wall | Input/h | Pre-opt input/h | Delta |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Uni-Dock fast | 4,066 | 4,046 | 5.875 s | 66.789 s | 74.380 s | 198,248 | 166,502 | +19.1% |
 | Uni-Dock balance | 4,066 | 4,036 | 5.791 s | 208.351 s | 215.865 s | 68,309 | 63,263 | +8.0% |
 | Uni-Dock detail | 4,066 | 4,038 | 5.845 s | 260.562 s | 268.136 s | 54,993 | 51,342 | +7.1% |
 | AutoDock-GPU fast | 4,066 | 4,066 | 5.885 s | 387.637 s | 395.521 s | 37,281 | 33,392 | +11.6% |
 
-The old rates come from the locked 20,000-row one-GPU measurements in
-`speed-bench/REPORT.md`. Rate normalization is useful, but a 4,096-row prefix
-and a 20,000-row library do not have identical chemistry or amortization. No
-claim here substitutes for the deferred full controlled matrix.
+The comparison rates in the last two columns are from the pre-optimization
+20,000-row one-GPU record. Rate normalization is useful, but a 4,096-row prefix
+and a 20,000-row library do not have identical chemistry or amortization. The
+completed controlled matrix is reported separately below.
 
 A separate exact-library Uni-Dock-fast check used all 20,000 locked rows. Its
 final automatic plan used a 2,048-ligand ramp while preparing the remaining
 17,952 behind the first engine invocation. The approximately 247k/hour value
-is **not a new raw-engine rate**: the locked report already measured 246,377
+is **not a new raw-engine rate**: the pre-optimization record measured 246,377
 successful molecules/hour over engine wall. The like-for-like boundaries are:
 
-| Metric | Locked run | Optimized run | Delta |
+| Metric | Pre-optimization run | Optimized run | Delta |
 | --- | ---: | ---: | ---: |
 | Input rows/hour, complete wall | 166,502 | 246,932 | +48.3% |
 | Successful rows/hour, complete wall | 164,046 | 242,809 | +48.0% |
@@ -67,6 +69,32 @@ the old gap between end-to-end and engine-only throughput by overlapping
 preparation with docking; it does not make Uni-Dock itself materially faster.
 The bounded-preparation run without a ramp took 307.710 seconds, so the ramp
 supplied a further 5.5% wall-time improvement.
+
+## Completed full cold scaling matrix
+
+The final controlled benchmark used 20,000 fixed input molecules per GPU,
+score-only output, the public wrapper, and automatic performance settings.
+Every row is one cold sample with no warm-up or repeat.
+
+| Engine / mode | GPUs | Input | Yield | Complete wall | Input/hour | Successful/hour | Engine-only successful/hour |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Uni-Dock fast | 1 | 20,000 | 98.395% | 302.967 s | 237,649 | 233,835 | 242,218 |
+| Uni-Dock fast | 2 | 40,000 | 98.345% | 301.827 s | 477,095 | 469,199 | 485,652 |
+| Uni-Dock fast | 4 | 80,000 | 98.365% | 319.341 s | 901,859 | 887,113 | 931,350 |
+| Uni-Dock balance | 1 | 20,000 | 98.380% | 1,002.441 s | 71,825 | 70,661 | 71,401 |
+| Uni-Dock balance | 2 | 40,000 | 98.305% | 1,020.373 s | 141,125 | 138,733 | 140,307 |
+| Uni-Dock balance | 4 | 80,000 | 98.374% | 1,011.047 s | 284,853 | 280,221 | 283,773 |
+| Uni-Dock detail | 1 | 20,000 | 98.250% | 1,262.779 s | 57,017 | 56,019 | 56,491 |
+| Uni-Dock detail | 2 | 40,000 | 98.310% | 1,283.153 s | 112,224 | 110,327 | 111,373 |
+| Uni-Dock detail | 4 | 80,000 | 98.355% | 1,308.415 s | 220,114 | 216,493 | 218,568 |
+| AutoDock-GPU fast | 1 | 20,000 | 99.090% | 1,993.594 s | 36,116 | 35,787 | 36,013 |
+| AutoDock-GPU fast | 2 | 40,000 | 99.037% | 2,021.262 s | 71,243 | 70,557 | 71,097 |
+| AutoDock-GPU fast | 4 | 80,000 | 99.066% | 2,044.646 s | 140,856 | 139,540 | 140,864 |
+
+The full stage timing table and audit metadata are in
+[`../../speed-bench/REPORT.md`](../../speed-bench/REPORT.md). Four-GPU input
+rate scaled by 3.79x for Uni-Dock fast, 3.97x for balance, 3.86x for detail,
+and 3.90x for AutoDock-GPU fast relative to each one-GPU case.
 
 ## Hard-molecule policy
 
@@ -135,6 +163,8 @@ result checksum. The authoritative runs are:
 - `results/docking-medium-wrapper-autodock-gpu-fast-v1`
 - `results/docking-medium-unidock-fast-v1` (exact 20k comparison)
 
-The full benchmark should next test 20,000 and at least 65,536 ligands per GPU
-on one, two, and four GPUs, with score-only and pose-writing products reported
-separately. Existing locked baseline artifacts must be preserved.
+The requested 20,000-ligand/GPU cold matrix is complete. Optional follow-on
+work can test at least 65,536 ligands per GPU for longer steady-state
+amortization, warm preparation caches, and pose-writing products. Those are
+distinct protocols and must not replace or be merged with the locked cold
+results.

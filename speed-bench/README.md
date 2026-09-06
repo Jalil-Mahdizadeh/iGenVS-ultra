@@ -1,5 +1,9 @@
 # Full cold speed benchmark
 
+Status: **complete**. All 12 docking cases and all three exact-10-million-score
+screening cases finished on 2026-09-06. See the
+[`REPORT.md`](REPORT.md) for the final 1/2/4-GPU results.
+
 This directory contains the locked, one-sample benchmark described in
 [`plan.md`](plan.md). The public `igenvs-ultra` wrappers select every performance
 setting automatically.

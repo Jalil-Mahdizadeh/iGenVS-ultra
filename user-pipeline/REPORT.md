@@ -56,21 +56,31 @@ user's bound ligand or loaded from a prepared target.
 The code-frozen real one-GH200 smoke produced exactly 8,192 durable scores in
 52.71 seconds. The final 200,000-molecule all-score medium run took 85.16
 seconds while creating a new encoder profile and 75.17 seconds when reusing it,
-or 9.58 million molecules/hour. Cold and cached outputs were byte-identical. The prior
-best automatic medium run took 104.37 seconds; reusable wall therefore fell
-28.0% and throughput rose 38.8%.
+or 9.58 million molecules/hour. Cold and cached outputs were byte-identical.
+The prior best automatic medium run took 104.37 seconds; reusable wall
+therefore fell 28.0% and throughput rose 38.8%.
 
 The planner selected an iGen3 batch of 65,280 from live memory and backend
 limits, 64 canonicalization workers from the 72-core affinity, and the released
 gMolAI batch 512 after measuring 53,113 rows/s on its 49,152-row calibration
 panel. An explicit compile probe produced identical output but was slower end
-to end, so compilation remains off. These are smoke/medium qualification
-results, not the pending full one-/two-/four-GPU benchmark. See
-`benchmarks/RESULTS.md` for timings and boundaries.
+to end, so compilation remains off. These remain the focused one-GPU
+smoke/medium qualification results; see `benchmarks/RESULTS.md` for their
+timings and boundaries.
+
+The subsequent full cold benchmark is complete. Each automatic `screen-fast`
+case committed exactly 10,000,000 finite scores with all-score durable output
+and cross-batch overlap. Complete-wall throughput was 31,273,519/hour on one
+GPU, 50,212,570/hour on two GPUs, and 71,089,653/hour on four GPUs. The same
+matrix completed regular docking for Uni-Dock fast/balance/detail and
+AutoDock-GPU fast at 20,000 input molecules per GPU. Four-GPU complete-wall
+input rates were 901,859/hour, 284,853/hour, 220,114/hour, and 140,856/hour,
+respectively. The authoritative protocol, yields, stage timings, and all
+1/2/4-GPU values are in [`../speed-bench/REPORT.md`](../speed-bench/REPORT.md).
 
 ## Verification
 
-- Twenty-five lightweight unit/regression tests passed (seven environment-gated
+- Thirty-one lightweight unit/regression tests passed (seven environment-gated
   integration tests skipped in the host-only invocation).
 - Real regular iGenVS integration passed: two molecules prepared and docked,
   native `results.csv` produced, and an identical rerun resumed without

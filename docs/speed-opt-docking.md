@@ -1,16 +1,16 @@
 # iGenVS-ultra regular-docking speed audit and optimization blueprint
 
-Status: P0 speed implementation and one-GPU smoke/medium qualification
-completed on 2026-09-06. The definitive 1/2/4-GPU benchmark remains deferred.
-The original audit is retained below, followed by an implementation checkpoint
-and measured qualification evidence.
+Status: portable speed implementation, one-GPU smoke/medium qualification, and
+the requested cold 1/2/4-GPU matrix completed on 2026-09-06. The original
+pre-optimization audit is retained as historical rationale; larger
+sustained/cache/pose experiments remain optional follow-on work.
 
 ## Scope
 
 This audit covers both docking routes in `user-pipeline`:
 
-1. The user-facing `igenvs-ultra dock` command, which delegates to one upstream
-   `igenvs screen` process.
+1. The user-facing `igenvs-ultra dock` command, which automatically creates one
+   upstream `igenvs screen` lane per selected GPU and merges the results.
 2. Reference, validation, and active-learning docking launched by `fit`, which
    uses four fixed logical shards and later merges their results.
 
@@ -22,29 +22,24 @@ by `speed-opt-screening.md`.
 
 ## Executive conclusion
 
-Regular docking has material avoidable overhead, especially in short
-`fast`/score-only runs. The present implementation is not at maximum speed.
+The implemented portable multi-GPU path removes most avoidable outer
+orchestration and ligand-preparation tail overhead. On the completed
+base-isomeric 4ag8 cold fixture, four GH200 GPUs processed 80,000 rows at
+901,859 input molecules/hour and 887,113 successful molecules/hour end to end;
+the concurrent Uni-Dock engine boundary was 931,350 successful/hour.
 
-On the current base-isomeric 4ag8 fixture, four GH200 GPUs processed 80,000
-input rows at 570,847 input molecules/hour end to end, while the concurrent
-Uni-Dock engine span reached 980,565 successful molecules/hour. A diagnostic
-kernel-time-only calculation is approximately 1.33 million successful
-molecules/hour. The latter is an upper-bound diagnostic, not a promised
-production rate, but it separates three layers of lost time:
-
-- cold and repeated outer orchestration;
-- ligand-preparation barriers and stragglers;
-- CPU/setup work inside Uni-Dock around its CUDA kernels.
-
-The highest-value work is therefore not a single larger batch. It is a
-portable, persistent, streaming multi-GPU docking data plane that starts GPU
-work early, keeps every GPU supplied, shares ingress once, isolates slow
-preparation fallbacks, and plans from the actual hardware and workload.
+The remaining fast-mode gap is now small and primarily inside the engine
+boundary: engine critical time was 304.173 of 319.341 complete seconds, while
+preparation critical time was only 5.740 seconds. Balance, detail, and
+AutoDock-GPU are even more engine dominated. Further work should therefore
+focus on measured engine setup/kernel behavior, longer sustained workloads,
+and optional cache/pose products rather than re-solving the completed
+multi-GPU orchestration problem.
 
 ## Implementation checkpoint: 2026-09-06
 
-The following P0/P1 changes are now implemented in the source-tree execution
-path and covered by automated or real-engine tests:
+The following high-priority changes are now implemented in the source-tree
+execution path and covered by automated or real-engine tests:
 
 - `igenvs-ultra dock` discovers all CUDA-visible GPUs by default, launches one
   docking lane per GPU with disjoint CPU affinity, and k-way merges shard CSVs
@@ -129,7 +124,7 @@ after completion.
 
 The medium suite used the same deterministic first 4,096 rows of the locked
 20,000-row base-isomeric library. It is intentionally a one-GPU qualification,
-not the deferred full scaling benchmark:
+distinct from the later completed full scaling benchmark:
 
 | Engine / mode | Input | Prepared | Successful | Complete wall | Input/h | Locked 20k input/h | Rate delta |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -145,8 +140,8 @@ automatic plan uses a 2,048-ligand ramp, then prepares the remaining 17,952
 while the first GPU invocation runs.
 
 The approximately 247k/hour value is not a new Uni-Dock engine-rate result.
-The locked report already recorded 246,377 successful rows/hour over engine
-wall. These are the correct like-for-like comparisons:
+The pre-optimization record already contained 246,377 successful rows/hour
+over engine wall. These are the correct like-for-like comparisons:
 
 | Metric | Locked run | Optimized run | Delta |
 | --- | ---: | ---: | ---: |
@@ -168,11 +163,11 @@ tail batch. This supports torsion-aware balancing while leaving the LGA run,
 evaluation, local-search, autostop, and scoring protocol untouched.
 
 Machine-readable evidence is stored under
-`user-pipeline/benchmarks/results/docking-{smoke,medium}-wrapper-*`, with the
+`../user-pipeline/benchmarks/results/docking-{smoke,medium}-wrapper-*`, with the
 exact command, hardware, source hashes, manifest timings, terminal counts, and
-result checksum. `user-pipeline/benchmarks/docking_optimization.py` reproduces
-the bounded suite. The definitive cold/sustained 1/2/4-GPU matrix described at
-the end of this document has not been run.
+result checksum. `../user-pipeline/benchmarks/docking_optimization.py`
+reproduces the bounded suite. The requested cold 1/2/4-GPU matrix was completed
+after this qualification and is summarized below.
 
 The isolation regression also passed. An exact-plan 8,192-row neural smoke run
 reproduced checksum `18c29950572bcb1d8c6fef3f27ef4734148d216dc1b6bb98c80f48aa2fc85c7b`
@@ -183,7 +178,29 @@ and completed in 75.536 seconds versus 75.170, a 0.49% single-run difference.
 This is timing noise rather than material degradation; the docking path did
 not modify neural generation, encoding, head inference, or their resource plan.
 
-## Current execution paths
+### Completed full cold 1/2/4-GPU benchmark
+
+All cases used 20,000 fixed inputs per GPU, score-only output, one cold sample,
+and automatic performance controls. The complete stage table and audit are in
+[`speed-bench/REPORT.md`](../speed-bench/REPORT.md).
+
+| Engine / mode | 1-GPU input/h | 2-GPU input/h | 4-GPU input/h | 4-GPU successful/h | 4-GPU engine-only successful/h |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Uni-Dock fast | 237,649 | 477,095 | 901,859 | 887,113 | 931,350 |
+| Uni-Dock balance | 71,825 | 141,125 | 284,853 | 280,221 | 283,773 |
+| Uni-Dock detail | 57,017 | 112,224 | 220,114 | 216,493 | 218,568 |
+| AutoDock-GPU fast | 36,116 | 71,243 | 140,856 | 139,540 | 140,864 |
+
+Relative to one GPU, four-GPU complete-wall input throughput scales 3.79x,
+3.97x, 3.86x, and 3.90x respectively. Yields are 98.25-98.40% for Uni-Dock
+and 99.04-99.09% for AutoDock-GPU across the matrix.
+
+## Pre-optimization execution paths (historical)
+
+The execution-path and bottleneck sections below describe the implementation
+that motivated the checkpoint above. They are retained to explain the design;
+statements in these sections are not descriptions of the released optimized
+path.
 
 ### Standalone regular docking
 
@@ -231,9 +248,10 @@ on two GPUs they execute in two waves; on four GPUs they execute concurrently.
 This is reproducible, but it multiplies cold work and makes completion depend
 on the slowest preparation tail.
 
-## Measured baseline
+## Pre-optimization measured baseline (historical)
 
-The locked current results are in `speed-bench/REPORT.md`:
+The original audit used these older measurements. They are not the completed
+results in `speed-bench/REPORT.md`:
 
 | Engine / mode | GPUs | Input | Complete wall | Input/h | Engine successful/h |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -254,9 +272,9 @@ bookkeeping. They intentionally expose different boundaries and must not be
 silently interchanged.
 
 The published 1,340,509 attempted/hour four-GH200 result used 262,144
-RL-nonisomeric ligands against 1iep, or 65,536 ligands per GPU. The current
-benchmark uses 80,000 base-isomeric ligands against 4ag8, or 20,000 per GPU.
-The current ligands are larger and more flexible on average, and the shorter
+RL-nonisomeric ligands against 1iep, or 65,536 ligands per GPU. This historical
+benchmark used 80,000 base-isomeric ligands against 4ag8, or 20,000 per GPU.
+Those ligands are larger and more flexible on average, and the shorter
 run amortizes startup and preparation less. The rate difference is therefore
 not evidence that all of the published rate can be recovered by orchestration
 alone.
@@ -704,9 +722,15 @@ or persistent processes must be tested for:
 - rank correlation and top-fraction overlap;
 - deterministic restart and cross-hardware behavior where promised.
 
-## Prioritized implementation blueprint
+## Original prioritized implementation blueprint
 
-### P0: required before a definitive full regular-docking benchmark
+The checkpoint and completed benchmark above supersede this original ordering.
+Automatic GPU resolution and fan-out, shared validation, bounded preparation
+and ramp overlap, physical-core-aware planning, lazy probes, and managed
+AutoDock-GPU MPS are implemented. A prepared-ligand cache, persistent Uni-Dock
+engine state, deeper asynchronous output, and telemetry remain follow-on work.
+
+### Original P0 targets for the full regular-docking benchmark
 
 1. Fix visible-GPU resolution and record process-local and physical identities.
 2. Add automatic multi-GPU standalone docking with one persistent lane per GPU.
@@ -769,66 +793,54 @@ workers, batch sizes, MPS processes, CPU affinity, or logical shards. Advanced
 overrides can remain diagnostic, but every automatic decision must be written
 to a plan/manifest for reproducibility.
 
-## Benchmark required after optimization
+## Completed benchmark and optional extensions
 
-The definitive benchmark should contain both cold-latency and sustained tests:
-
-1. 20,000 ligands/GPU to expose cold startup and first-batch preparation.
-2. At least 65,536 ligands/GPU, with at least two full steady-state engine
-   batches, to measure sustained throughput comparably to the published run.
-3. One, two, and four GPUs using identical chemistry and target per series.
-4. Cold preparation-cache and warm preparation-cache results reported
-   separately.
-5. Uni-Dock `fast` score-only as the maximum-speed product.
-6. Default `balance` plus merged poses as a separate normal-product result.
-7. AutoDock-GPU under its independently auto-selected qualified configuration.
-
-For every result, record:
+The requested release benchmark is complete: 20,000 ligands/GPU, identical
+4ag8/base-isomeric chemistry, one/two/four GPUs, Uni-Dock
+`fast`/`balance`/`detail`, AutoDock-GPU `fast`, score-only output, automatic
+public wrappers, and exactly one cold sample per case. It records:
 
 - all input rows/hour by complete scheduler or launcher wall;
 - successful finite scores/hour end to end;
 - engine-only successful scores/hour;
 - generation, validation, preparation wait/CPU, docking, result, and commit
   timings;
-- preparation latency percentiles and fallback/failure CPU consumption;
-- engine kernel, CPU postprocessing, transfer/setup, and invocation times;
-- per-GPU utilization, power, memory, and starvation periods;
-- CPU affinity, NUMA placement, RAM high-water mark, scratch bytes/inodes, and
-  storage class;
 - exact target, chemistry, search, scoring, pose, preparation, refinement, and
   artifact identities.
+
+See [`speed-bench/REPORT.md`](../speed-bench/REPORT.md). Larger sustained runs,
+warm prepared-ligand-cache trials, pose-writing products, preparation latency
+percentiles, and hardware utilization telemetry remain useful optional
+extensions; they are not missing cases from the requested cold benchmark.
 
 Do not compare the current base-isomeric 4ag8 20K/GPU result directly with the
 published RL-nonisomeric 1iep 65,536/GPU result without preserving both fixture
 and timing-boundary differences.
 
-## Expected headroom
+## Observed improvement and remaining headroom
 
-For the current four-GPU fast fixture, eliminating outer critical-path gaps
-would move the measured 570,847 input/hour toward the current engine span of
-roughly 980,565 successful/hour. Eliminating all measured engine non-kernel
-time would imply a diagnostic ceiling near 1.33 million successful/hour. These
-figures mix input and successful-result denominators and are deliberately
-presented as boundaries, not forecasts.
+For the current four-GPU fast fixture, complete-wall input throughput improved
+from the historical 570,847/hour to 901,859/hour. The completed run's engine
+boundary is 931,350 successful/hour, versus 887,113 successful/hour end to end.
+The remaining outer-orchestration gap is therefore about 4.7% on the successful
+rate boundary, not the much larger gap diagnosed before optimization.
 
-Real attainable performance will be lower because validation, unavoidable
-preparation, transfers, refinement, result durability, failures, and terminal
-tails cannot all disappear. Conversely, a larger sustained workload and a warm
-prepared-ligand cache can outperform the current short-run end-to-end rate
-without any scientific change.
+A larger sustained workload or a warm prepared-ligand cache may improve
+amortization, but those are different protocols from the completed cold run.
+Validation, unavoidable preparation, transfers, refinement, result durability,
+failures, and terminal tails cannot all disappear.
 
-For `balance` and `detail`, the engine already consumes most wall time, so
-outer orchestration provides less percentage headroom. Uni-Dock kernel work or
-scientific search settings dominate those modes. AutoDock-GPU similarly spends
-most tuned wall inside the engine; its largest immediate portability problem
-is selecting and activating the tuned concurrent execution mode automatically.
+For `balance` and `detail`, the engine consumes most wall time, so outer
+orchestration provides little percentage headroom. Uni-Dock kernel work or
+scientific search settings dominate those modes. AutoDock-GPU likewise spends
+almost all tuned wall inside the engine; the automatic wrapper now selects and
+activates its qualified concurrent execution mode.
 
 ## Final decision
 
-The P0 implementation is ready for the separately requested full benchmark.
-The existing locked results remain the baseline and must not be overwritten.
-Run the cold and sustained 1/2/4-GPU matrix on the same fixtures, preserve
-score-only and pose-writing products as separate protocols, and report both
-complete-wall and engine-wall rates. Remaining streaming, persistent-engine,
-NUMA calibration, and Uni-Dock internal setup work are follow-on optimization,
-not reasons to conflate this medium qualification with a definitive result.
+The requested cold 1/2/4-GPU benchmark is complete and is the definitive
+release result for this fixture and protocol. Preserve score-only and
+pose-writing products as separate protocols in any extension. Prepared-ligand
+caching, longer sustained runs, persistent-engine experiments, deeper NUMA
+calibration, and Uni-Dock internal setup work are optional follow-on
+optimization rather than outstanding parts of this benchmark.

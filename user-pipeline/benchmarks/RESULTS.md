@@ -3,8 +3,9 @@
 Regular physical-docking smoke/medium qualification is reported separately in
 [`DOCKING-RESULTS.md`](DOCKING-RESULTS.md).
 
-Status: smoke and medium qualification complete on one GPU; full 1/2/4-GPU
-benchmark intentionally deferred.
+Status: smoke/medium qualification and the full cold 1/2/4-GPU benchmark are
+complete. The full result is reported separately because it uses a locked
+10-million-score production boundary.
 
 ## Boundary
 
@@ -22,7 +23,24 @@ CPU cores in the task affinity, driver 580.159.04, PyTorch 2.11.0+cu128 in the
 iGen3 container, and Slurm job 2071150. Rates below must not be projected to
 another GPU without running its automatic planner.
 
-## Final measurements
+## Completed full cold scaling benchmark
+
+Each case was one cold timing sample with automatic planning, cross-batch
+overlap, all-score durable output, and exactly 10,000,000 committed finite
+scores. No warm-up or repeated timing sample was used.
+
+| GPUs | Complete wall | Screening/hour | Candidate yield | Generate | Encode | Heads |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1,151.134 s | 31,273,519 | 91.182% | 923.744 s | 557.363 s | 2.075 s |
+| 2 | 716.952 s | 50,212,570 | 91.182% | 470.202 s | 235.203 s | 1.229 s |
+| 4 | 506.403 s | 71,089,653 | 91.182% | 242.118 s | 83.651 s | 0.228 s |
+
+Generation and scoring overlap, so stage sums can exceed complete wall time.
+The complete protocol, encoding yield, startup/shutdown/finalization, and
+unrounded measurements are in
+[`../../speed-bench/REPORT.md`](../../speed-bench/REPORT.md).
+
+## Earlier one-GPU qualification measurements
 
 | Run | Rows | Profile state | Wall (s) | Rows/s | Rows/hour | Generation (s) | Score wall (s) |
 |---|---:|---|---:|---:|---:|---:|---:|
@@ -113,8 +131,8 @@ records are:
 - `results/medium-codefreeze-fresh/summary.json`
 - `results/medium-codefreeze-cached/summary.json`
 
-This pass does not claim a theoretical decoder maximum or multi-GPU scaling
-result. Shared-memory transport, cross-stage overlap, fused GPU
-encoding/calibration/heads, and decoder-kernel work remain in the blueprint.
-The requested full benchmark should be run separately after this code is
-frozen.
+These earlier runs do not claim a theoretical decoder maximum. Multi-GPU
+scaling is now established by the completed cold benchmark above. Finer-grain
+shared-memory transport, fused GPU encoding/calibration/heads, and
+decoder-kernel work remain possible follow-on optimizations; cross-batch
+generation/scoring overlap is already active in the measured public path.

@@ -1,8 +1,9 @@
 # iGenVS-ultra maximum-speed screening design
 
-Status: Phase-1 persistent orchestration and portable automatic planning are
-implemented and smoke/medium-qualified on one GH200. The full 1/2/4-GPU speed
-benchmark and the deeper shared-memory/kernel phases remain pending.
+Status: Phase-1 persistent orchestration, portable automatic planning, and the
+full cold 1/2/4-GPU benchmark are complete as of 2026-09-06. Deeper
+shared-memory, fusion, and decoder-kernel phases remain optional follow-on
+work.
 
 ## Implementation checkpoint (2026-09-06)
 
@@ -43,16 +44,23 @@ fresh encoder-profile run took 85.16 seconds. The prior best automatic medium
 run took 104.37 seconds, so this pass reduced reusable wall time by 28.0% and
 increased throughput by 38.8%. A compile probe produced identical output but
 was slightly slower end to end, so compilation is not enabled automatically.
-Detailed evidence is in `user-pipeline/benchmarks/RESULTS.md`.
+Detailed evidence is in `../user-pipeline/benchmarks/RESULTS.md`.
+
+The later full cold benchmark committed exactly 10,000,000 finite scores per
+case at 31.27, 50.21, and 71.09 million scores/hour on one, two, and four
+GH200 GPUs. It used the public count-only command, automatic planning,
+all-score durable output, and cross-batch overlap. See
+[`speed-bench/REPORT.md`](../speed-bench/REPORT.md).
 
 Implemented here does not mean the complete blueprint below is finished.
-Shared-memory transport, cross-stage queue overlap, fused GPU
-encoder/calibrator/head execution, reusable KV buffers, asynchronous token
-transfer, and decoder-kernel research remain the next optimization phases.
+Cross-batch generation/scoring overlap is active. Finer-grain shared-memory
+transport, fused GPU encoder/calibrator/head execution, reusable KV buffers,
+asynchronous token transfer, and decoder-kernel research remain possible next
+optimization phases.
 
 ## Goal
 
-The final-screening interface should require exactly one user value:
+The final-screening interface now requires exactly one user value:
 
 ```text
 igenvs-ultra screen-fast 10000000
@@ -79,8 +87,9 @@ The optimization objective is:
 
 ## Executive conclusion
 
-Ultra should become a persistent streaming service for the lifetime of one
-screen, not a launcher that repeatedly executes short container commands.
+Ultra is now a persistent streaming service at the process level for the
+lifetime of one screen. The architecture below is the longer-term data-plane
+target for removing the remaining file/IPC and kernel overhead.
 
 The desired data plane is:
 
@@ -105,95 +114,60 @@ The desired data plane is:
                          asynchronous partitioned result/checkpoint writer
 ```
 
-Each GPU worker should load iGen3, gMolAI, the gMol calibrator, the input
-standardizer, and all three target heads once. It should retain its CUDA
-context, KV-cache buffers, graph preprocessing machinery, and model weights
-until completion. The supervisor should schedule short generation and scoring
-quanta according to queue pressure rather than destroying and recreating the
-models between stages.
+The implemented transitional design gives each GPU one persistent iGen3
+worker and one persistent gMolAI/head worker, loading and validating models
+once per screen. A future unified worker could additionally share buffers and
+schedule finer generation/scoring quanta through memory queues.
 
-Once process churn is removed, generation should dominate. One GH200 has
-already demonstrated about 2,076 valid unique base-isomeric output SMILES/s in
-the local 98,304-row fixture, whereas the published hot gMolAI encoder reaches
-58,330 molecules/s on **one** GH200 at batch 512. Target-head forward inference
-is faster again. The final pipeline should therefore approach the sustained
-globally unique iGen3 rate, not spend tens of minutes starting encoders.
+With process churn removed, generation is the largest scalable GPU stage. One
+GH200 has already demonstrated about 2,076 valid unique base-isomeric SMILES/s
+in the local 98,304-row fixture, whereas the published hot gMolAI encoder
+reaches 58,330 molecules/s on **one** GH200 at batch 512. Target-head inference
+is faster again. The completed pipeline no longer spends tens of minutes
+restarting encoders; remaining gains depend on admission/chemistry overhead,
+multi-GPU scheduling efficiency, and the generator itself.
 
-## What the current measurements say
+## What the completed measurements say
 
-The locked 10-million-molecule results are in
-[`speed-bench/REPORT.md`](../speed-bench/REPORT.md). The four-GH200 run measured:
+The locked 10-million-score results are in
+[`speed-bench/REPORT.md`](../speed-bench/REPORT.md). Every case is one cold
+sample with no warm-up or repeat. All performance controls remained automatic,
+all scores were durably written, and generation/scoring overlap was enabled.
 
-| Quantity | Current result |
-|---|---:|
-| End-to-end wall | 9,197.00 s |
-| End-to-end screening | 3.914 million/h |
-| Generation critical path | 6,195.86 s |
-| Parallel score-stage wall | 2,320.07 s |
-| Remaining validation/dedup/finalization wall, approximately | 681.07 s |
-| Reported encoding critical path | 927.63 s |
-| Reported head-forward critical path | 11.27 s |
-| Locally unique generated rows needed for 10M globally admitted | 10,663,693 |
-| Successfully encoded rows | 9,999,995 |
+| GPUs | Complete wall | Screening/hour | Batches | Generate | Score stage | Admit | Candidate yield |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1,151.134 s | 31,273,519 | 11 | 923.744 s | 784.202 s | 122.122 s | 91.182% |
+| 2 | 716.952 s | 50,212,570 | 9 | 470.202 s | 361.338 s | 120.669 s | 91.182% |
+| 4 | 506.403 s | 71,089,653 | 8 | 242.118 s | 163.451 s | 121.345 s | 91.182% |
 
-The approximate end-to-end fractions are 67.4% generation, 25.2% scoring, and
-7.4% other orchestration. Pure head forward is only about 0.12% of wall time.
-This makes the optimization order clear: remove process and data-boundary
-overhead, then optimize iGen3. Optimizing the tiny head forward in isolation
-cannot materially change end-to-end speed.
+All three cases committed exactly 10,000,000 finite scores with 100% encoding
+yield. Stage sums exceed complete wall because adjacent batches overlap. The
+four-GPU generation critical path is 3.82x faster than one GPU, while complete
+wall improves 2.27x. Admission remains almost fixed at about 121 seconds, so
+CPU admission, scheduling/tail behavior, and startup/finalization now explain
+much of the multi-GPU efficiency gap. Head inference is negligible at 2.075,
+1.229, and 0.228 seconds for one, two, and four GPUs.
 
-The current run is not measuring intrinsic model limits:
+### Historical pre-optimization diagnosis
 
-- Four logical iGen3 shards across 110 outer batches caused **440 fresh iGen3
-  processes**. This is also 440 processes on one GPU, where four are run
-  serially for every outer batch.
-- The four-GPU score path caused **436 fresh scoring processes**. Each process
-  verifies and hashes artifacts, reloads gMolAI, reads CSV, starts a policy
-  pool, starts a graph pool, reloads three target heads, writes and hashes
-  output, shuts down its pools, and empties CUDA state.
-- Validation adds another 110 container commands. The four-GPU screen therefore
-  crosses roughly 986 short process/container boundaries in its hot path.
-- The current generator auto-tuner selects the largest cache allocation that
-  fits, capped at 32,768. It does not select the batch with the best accepted
-  molecules per second.
-- The current generator requests a full internal candidate batch even when
-  considerably fewer accepted molecules remain, then discards valid surplus.
-- The execution is strictly `generate -> validate -> admit -> score` for every
-  outer batch. There is no cross-stage overlap.
-- The speed benchmark uses `--score-threshold 1.0`, so almost no full result
-  rows are saved. A production benchmark that promises scores for all `N`
-  molecules must include durable result writing in its primary wall time.
+Before the persistent worker and overlap implementation, the earlier four-GPU
+prototype needed 9,197 seconds (3.914 million/hour), repeatedly launched
+hundreds of generator/scorer processes, used a threshold that retained almost
+no rows, and stopped with only 9,999,995 successful encodings. Those values are
+historical design evidence, not the current `speed-bench/REPORT.md` result.
+The completed four-GPU path is 18.16x faster by complete wall and satisfies the
+exact-score/all-output contract.
 
-The source confirms the boundaries:
-
-- [`generation.py`](../iGenVS/iGen3/src/igen3/generation.py) allocates KV caches
-  per batch, synchronously decodes, canonicalizes and writes each result, and
-  checks `bool(finished.all())` from the host inside the token loop.
-- [`workflow.py`](../user-pipeline/src/igenvs_ultra/workflow.py) launches fresh
-  generation, validation, and score commands and serializes several CSV
-  representations per outer batch.
-- [`model_ops.py`](../user-pipeline/src/igenvs_ultra/model_ops.py) starts its
-  reported encoder timer before artifact verification, model loading, CSV
-  parsing, and policy-worker creation. It then closes the encoder and empties
-  CUDA before loading and executing the heads.
-
-Reference hot-path evidence is deliberately kept separate from the current
-end-to-end metric:
-
-| Reference | Hardware | Boundary | Rate |
-|---|---|---|---:|
-| Local iGen3 base-isomeric fixed library | 1 GH200 | valid unique output including RDKit work, model already loaded | 2,076.5/s |
-| Published iGen3 base-isomeric | RTX PRO 2000 Blackwell Laptop, 8 GB | stored benchmark generation boundary | 1,463.1/s |
-| Published gMolAI optimized, batch 512 | 1 GH200 | warmed canonical SMILES in RAM to FP32 host vectors | 58,330.4/s |
-| Current ultra head forward | 4 GH200 aggregate | forward-only critical path | about 887,500/s |
-
-The iGen3 result is documented in the
-[`iGen3` benchmark](https://github.com/Jalil-Mahdizadeh/iGen3/tree/main/benchmarks/latest),
-and the gMolAI result and timing boundary are documented in
-[`extra-benchmark/speed/RESULTS.md`](https://github.com/Jalil-Mahdizadeh/gMolAI-v2.0/blob/main/extra-benchmark/speed/RESULTS.md)
+Low-level generator opportunities remain in
+[`generation.py`](../iGenVS/iGen3/src/igen3/generation.py), including per-batch
+KV allocation and token-loop host synchronization. Reference standalone rates
+remain useful but have different boundaries: the local hot iGen3 fixture
+reached 2,076.5 valid unique SMILES/s on one GH200; the published RTX PRO 2000
+Blackwell Laptop iGen3 result was 1,463.1/s; and published warm gMolAI encoding
+reached 58,330.4/s on one GH200. See the
+[`iGen3` benchmark](https://github.com/Jalil-Mahdizadeh/iGen3/tree/main/benchmarks/latest)
+and gMolAI [`RESULTS.md`](https://github.com/Jalil-Mahdizadeh/gMolAI-v2.0/blob/main/extra-benchmark/speed/RESULTS.md)
 and [`PROTOCOL.md`](https://github.com/Jalil-Mahdizadeh/gMolAI-v2.0/blob/main/extra-benchmark/speed/PROTOCOL.md).
-These rates are not directly interchangeable, but they prove that the current
-ultra rates are dominated by orchestration rather than the frozen models.
 
 ## Correctness contract
 
@@ -218,13 +192,13 @@ execution, not scientific meaning.
    policy, maximum sequence length, or target model merely because another
    scientific workload is faster.
 
-The current benchmark stopping at 10,000,000 admissions but producing
-9,999,995 encodings is a useful example of why the committed-score counter must
-be authoritative.
+The completed benchmark confirms this contract: every 1/2/4-GPU case stopped
+at exactly 10,000,000 committed finite scores, not at an upstream admission or
+generation counter.
 
 ## The count-only user experience
 
-The normal command should expose no performance knobs:
+The normal command exposes no performance knobs:
 
 ```text
 igenvs-ultra screen-fast N
@@ -248,18 +222,18 @@ Developer-only diagnostic overrides can exist, but they should not be part of
 the ordinary user contract. Every automatic choice must remain inspectable in
 `plan.json`; automatic must not mean opaque.
 
-The default output contract should also be fixed because the user does not
-choose it. For maximum useful throughput, the recommended primary output is a
-partitioned Parquet or Arrow dataset containing all `N` identities and scores,
-plus a small manifest. A CSV export can be a separate lazy compatibility step.
-If the product only needs a fixed top fraction, that can be a different
-predeclared product profile, but silently retaining zero rows or only a
-thresholded subset is not a valid all-molecule screening benchmark.
+The implemented default output contract is now fixed: all `N` identities and
+scores are durably committed to CSV plus a manifest. The completed benchmark
+measures that real product. Partitioned Parquet or Arrow with a lazy CSV export
+remains a possible writer optimization, provided it preserves the same public
+data contract. Silently retaining zero rows or only a thresholded subset is
+not a valid all-molecule screening benchmark.
 
 ## Replace the outer batch with independent execution scales
 
-One outer `stream_batch_size` currently controls unrelated concerns. The new
-engine should separate at least five scales:
+The Phase-1 engine separates generator and encoder microbatches from the outer
+durable stream block. A fuller data plane should independently control all five
+scales:
 
 1. **Generator microbatch:** GPU sequences sampled together.
 2. **Chemistry block:** raw strings sent to CPU validation/canonicalization.
@@ -272,9 +246,9 @@ These values have different optima. A generator batch may be 8K-32K, a graph
 batch around 512, a shared-memory chemistry block a few thousand, and a result
 partition hundreds of thousands or millions. None requires a new process.
 
-The old 100K/250K/500K/1M stream-size heuristic can remain only as a fallback
-checkpoint/output-partition estimate. It should not determine model lifetime or
-GPU kernel batch size.
+The resource-based stream-size model now acts as a checkpoint/output-partition
+estimate; it no longer determines persistent model lifetime or the generator
+and encoder kernel batches.
 
 ## Automatic planner
 
@@ -374,7 +348,9 @@ occur in the middle of a run unless a documented fallback is triggered.
 
 ## Persistent process and container architecture
 
-This is the highest-confidence optimization.
+The transitional two-service architecture below is implemented and is the
+largest reason the completed four-GPU result improved over the historical
+prototype. The unified shared-memory design remains a potential next step.
 
 ### Preferred architecture
 
@@ -411,6 +387,11 @@ Generation is the eventual bottleneck and deserves the deepest work.
 
 ### Immediate, low-risk changes
 
+Generator residency, throughput-aware safe batch selection, retained surplus,
+and persistent parallel canonicalization are implemented. The remaining
+subsections distinguish completed design rationale from lower-level follow-on
+work.
+
 #### Keep generators resident
 
 Maintain one loaded base-isomeric generator per active GPU for the full run.
@@ -419,8 +400,9 @@ processes. Save their RNG state/candidate counters at checkpoints.
 
 #### Tune sustained accepted throughput
 
-The current auto-tuner binary-searches the largest one-step KV allocation that
-fits. Replace it with a two-stage tuner:
+The original auto-tuner binary-searched the largest one-step KV allocation that
+fit. The implemented planner now bounds from live memory/backend limits and
+uses amortization-aware performance profiles. A deeper tuner can still:
 
 1. Estimate a safe memory ceiling.
 2. Benchmark a short geometric ladder below that ceiling, such as nearby
@@ -433,9 +415,9 @@ batches as well as the main steady-state batch.
 
 #### Do not discard surplus
 
-Generation should produce candidate blocks into a persistent queue. Valid
-unique molecules beyond the current result-partition boundary remain queued
-for the next partition. This removes the present full-batch rounding waste.
+Generation now retains surplus between persistent stream blocks. A future
+shared-memory queue can retain the same behavior while removing the remaining
+file-backed boundary.
 
 Near completion, forecast proposal demand from the observed committed yield:
 
@@ -467,13 +449,13 @@ Measure this change independently because it is simple and potentially large.
 
 Preallocate and reuse outputs, finished flags, SOS vectors, position data, KV
 caches and pinned transfer buffers for the selected batch-size ladder. The
-current allocator creates cache tensors for every generated batch. CUDA's
-caching allocator helps, but persistent typed buffers remove Python object,
-allocation, fragmentation and initialization work.
+generator still creates cache tensors for each generated batch. CUDA's caching
+allocator helps, but persistent typed buffers can remove Python object,
+allocation, fragmentation, and initialization work.
 
 #### Decouple GPU sampling from CPU chemistry
 
-The current iGen3 writer synchronously transfers tokens, decodes Python rows,
+The remaining iGen3 generation core synchronously transfers tokens, decodes Python rows,
 runs serial RDKit canonicalization, performs local deduplication and writes a
 file before the next GPU batch. Instead:
 
@@ -547,16 +529,17 @@ resume identity only under the same qualified plan.
 
 ## Chemistry, validation and exact deduplication
 
-An accepted molecule currently crosses several redundant chemistry boundaries:
+The pre-optimization path crossed several redundant chemistry boundaries:
 
 1. iGen3 parses and canonicalizes it for local valid-unique output.
 2. iGenVS validates and canonicalizes it again.
 3. gMol policy parses it, canonicalizes it, and reparses the canonical string.
 4. gMol graph construction parses the canonical string again.
 
-Depending on the exact path, that is up to five RDKit parses plus multiple
-string/file round trips. The optimized engine should have one authoritative
-chemistry pipeline.
+Depending on the path, that was up to five RDKit parses plus multiple
+string/file round trips. The generated Phase-1 path now bypasses redundant
+iGenVS validation and uses persistent canonicalization; fully fusing policy and
+graph construction remains future work.
 
 ### Fused chemistry worker
 
@@ -640,8 +623,8 @@ candidates where memory permits, optimizing complete packed-graph throughput.
 
 ### Eliminate host embedding round trips
 
-This is the most important encoder specialization for ultra. The generic
-encoder currently:
+This motivated the implemented in-memory scorer. The standalone generic
+encoder path:
 
 1. computes a GPU raw embedding;
 2. copies 384 floats per molecule to CPU;
@@ -654,7 +637,9 @@ For 10M molecules, one 384-D FP32 matrix is 15.36 GB. Moving and
 materializing it repeatedly is unnecessary because ultra does not save
 embeddings by default.
 
-Create an `encode_and_score` path:
+The default persistent scorer now avoids writing embedding NPZ files and keeps
+the encoder and heads resident. A fully GPU-fused `encode_and_score` path could
+go further:
 
 ```text
 packed graph -> gMol raw embedding on GPU
@@ -703,19 +688,22 @@ Head forward is already fast, but its surrounding setup is wasteful.
 - Compute sigmoid, mean probability, entropy and mutual information in the
   same GPU batch, returning only final/member score columns.
 
-The current forward-only speed means this work mainly removes model loading and
-data movement. It should not take priority over persistent generation,
-chemistry or encoding.
+The completed benchmark confirms that head forward is negligible. Further
+head fusion would mainly remove data movement and should not take priority over
+generation, admission, or multi-GPU scheduling.
 
 ## Stage overlap and GPU scheduling
 
-The current wall is approximately a sum of stage walls:
+The pre-optimization wall was approximately a sum of stage walls:
 
 ```text
 T_current ~= T_generate + T_validate/dedup + T_score + T_files
 ```
 
-With bounded queues, the steady-state wall approaches the slowest service:
+The current implementation overlaps generation and scoring across durable
+batches, which is why measured stage sums exceed complete wall. With finer
+bounded queues, steady-state wall can approach the slowest service more
+closely:
 
 ```text
 T_target ~= T_startup + max(T_generation_service,
@@ -845,8 +833,9 @@ should explicitly manage it.
 7. Shrink active GPU count near the tail when distributing a tiny batch across
    all GPUs costs more than it saves.
 
-This logic removes both the current tiny terminal stream batches and the
-off-by-encoding-rejection final count.
+Phase 1 implements exact replenishment, surplus retention, and exact committed
+counting. More adaptive tail sizing could further reduce the last partial
+batch without reintroducing an off-by-rejection result.
 
 ## Failure recovery without hot-path drag
 
@@ -950,7 +939,8 @@ committed scored molecules/s
 
 Never label a timer containing model loads, hashing and policy validation as
 pure encoder throughput. Never sum concurrent shard times to report a critical
-path. Include both cold-start and warmed steady-state rates.
+path. The completed release benchmark intentionally reports one cold sample;
+separate engineering profiles may additionally compare warmed steady state.
 
 The primary KPI is:
 
@@ -969,7 +959,19 @@ Secondary system targets for sufficiently large `N` are:
 - less than 1% avoidable proposal surplus at completion, apart from the chosen
   minimum efficient tail batch.
 
+The completed four-GPU run has 56.8% end-to-end parallel efficiency relative
+to one GPU, while its generation stage scales 3.82x. The 85% end-to-end target
+therefore remains aspirational even though the original absolute throughput
+target was exceeded.
+
 ## Prioritized optimization backlog
+
+This table preserves the original priority logic. Persistent per-GPU workers,
+exact committed-score replenishment, generator batch planning, surplus
+retention, persistent parallel chemistry, batch-512 encoder qualification, and
+cross-batch overlap are implemented. Shared-memory IPC, fully fused policy and
+GPU scoring, vectorized partition output, adaptive weighted scheduling, and
+decoder-kernel items remain open.
 
 | Priority | Change | Likely system impact | Complexity | Scientific risk |
 |---:|---|---|---|---|
@@ -994,22 +996,30 @@ Secondary system targets for sufficiently large `N` are:
 | 3 | Continuous slot recycling/paged KV | Potentially very high | Very high | Medium-high |
 | 3 | Qualified FP8/alternative decoder runtime | Unknown | Very high | High |
 
-## Recommended implementation sequence
+## Implementation sequence and current status
 
 ### Phase 0: make a trustworthy baseline
+
+Status: **complete** for the released cold protocol. The report includes exact
+counts, all-score durable output, full stage timings, automatic plans, and
+1/2/4-GPU cases.
 
 1. Add the complete timing/counter schema above without changing results.
 2. Preserve a representative base-isomeric candidate fixture and an exact
    end-to-end result fixture.
 3. Measure model load, pool startup, chemistry, graph forward, head setup,
    writing, and container wall separately.
-4. Add an all-scores durable-output benchmark; retain the current no-output
-   benchmark only as a computational profile.
+4. Maintain the all-scores durable-output benchmark as the primary result;
+   retain any historical no-output measurement only as a computational profile.
 
 Exit gate: every second of current four-GPU wall is assigned to a stage, and
 the sum/overlap accounting reconciles with process wall.
 
 ### Phase 1: remove cold starts
+
+Status: **core work complete**. One persistent iGen3 and one persistent
+gMolAI/head worker run per selected GPU, with model/pool lifetime bounded by
+the screen rather than the stream batch.
 
 1. Implement one persistent gMolAI/head service per GPU.
 2. Load, hash, warm and retain models/pools once.
@@ -1024,6 +1034,11 @@ locked fixture, and both generator and encoder approach their standalone hot
 rates on long blocks.
 
 ### Phase 2: create the streaming data plane
+
+Status: **partially complete**. Exact `N`, retained surplus, in-memory exact
+admission with bulk durable commits, persistent chemistry, and cross-batch
+overlap are active. Shared-memory blocks, fused graph construction, and a
+fully journaled queue remain open.
 
 1. Introduce candidate IDs and bounded shared-memory block queues.
 2. Run token decoding and chemistry concurrently with subsequent generation.
@@ -1040,6 +1055,11 @@ files or process startup.
 
 ### Phase 3: fuse encoding and scoring
 
+Status: **partially complete**. The default path avoids embedding NPZ
+round-trips and keeps the encoder and heads resident. GPU-side
+calibration/standardization fusion, pinned buffer rings, and partitioned output
+remain open.
+
 1. Expose GPU tensors from the optimized GINE core.
 2. Move calibrator and standardizer operations to GPU.
 3. load/stack the three heads once and compute all scores per graph batch.
@@ -1051,6 +1071,11 @@ Exit gate: output probabilities/ranks pass the frozen equivalence suite and no
 default path constructs a host 384-D screen-wide embedding matrix.
 
 ### Phase 4: automatic planning and adaptive scheduling
+
+Status: **portable automatic planning and 1/2/4-GPU execution complete**.
+Hardware/model-keyed profiles, resource bounds, automatic generator/encoder
+batches, and all-visible-GPU selection are active. Heterogeneous weighted
+scheduling and queue-feedback duty cycling remain open.
 
 1. Add hardware/topology discovery and qualified profile caching.
 2. Add the `N`-aware completion-time model.
@@ -1077,7 +1102,9 @@ much larger persistence and pipeline wins while pursuing speculative kernels.
 
 ## Acceptance test matrix
 
-Every release candidate should cover:
+The completed cold benchmark covers the large exact-count, one/two/four-GPU,
+all-score durable-output cases. Future release candidates should retain those
+regressions and add the remaining failure/topology cases below:
 
 - `N` smaller than one generator batch, exactly one batch, and a large
   multi-partition screen;
@@ -1107,30 +1134,20 @@ For numerical candidates, compare against the frozen implementation with:
 
 ## Performance opportunity and realistic target
 
-The current four-GPU run spends 9,197 seconds for 10M admitted molecules. If
-the current launch-heavy generation path alone were the lower bound, removing
-all other serialized work would cap useful throughput near 5.81M final
-molecules/h. That is not the real hardware ceiling because the generation path
-itself starts 440 processes.
+The completed four-GPU run spends 506.403 seconds for exactly 10M committed
+scores, or 71.09 million/hour. It exceeds the original 20-25 million/hour
+engineering objective and is 18.16x faster than the historical 9,197-second
+prototype. That original estimate must no longer be treated as a current
+target.
 
-Using the observed one-GH200 hot base-isomeric result as a reference:
-
-```text
-10,663,693 locally unique generated rows / (4 * 2,076.5 rows/s)
-    ~= 1,284 seconds of ideally scaled hot generation
-```
-
-That corresponds to about 28.0M final globally admitted molecules/h before
-multi-GPU inefficiency, output work and tail effects. At 85% of that reference,
-the result is about 23.8M/h. Separately, four ideal 58,330/s encoders would
-encode 10M molecules in about 43 seconds, and the heads are faster still.
-
-Therefore a sensible first large-screen engineering objective on four GH200s
-is **20-25 million durable scored molecules/h**, followed by decoder-kernel
-work if the measured generation ceiling supports more. This is a target to
-validate, not a promised result: generated-molecule chemistry, all-score output,
-CPU policy throughput, stochastic yield, GPU scaling and filesystem behavior
-must be measured in the integrated engine.
+The remaining opportunity is visible in scaling and stage boundaries. Four-GPU
+candidate generation reaches 163.07 million candidate slots/hour with 91.182%
+end-to-end candidate yield, but complete durable throughput is 71.09
+million/hour. Generation scales well; admission remains about 121 seconds at
+all GPU counts, and startup, scoring duty, synchronization, tail behavior, and
+finalization limit end-to-end scaling. Further targets should be set only after
+profiling these current boundaries rather than extrapolating the retired
+launch-heavy implementation.
 
 The more portable success criterion is stronger than a fixed number:
 
@@ -1156,13 +1173,12 @@ The more portable success criterion is stronger than a fixed number:
 
 ## Final recommendation
 
-The first implementation should not begin with exotic kernels. Build the
-persistent engine, retain all models and pools, use throughput-selected batches,
-remove redundant chemistry/files, and count exact committed scores. Those
-changes directly attack almost every unexplained minute in the current result
-and allow the proven standalone model rates to become relevant.
+The first implementation followed the intended order: persistent workers,
+retained models/pools, automatic batches, less redundant chemistry/I/O,
+cross-batch overlap, and exact committed-score accounting came before exotic
+kernels. The completed benchmark validates those decisions.
 
-Once the new engine is demonstrably generation-bound, profile the iGen3 token
+The next pass should profile admission and the iGen3 token
 loop. The best next candidates are removing its per-token host synchronization,
 overlapping CPU decode/chemistry, reusing KV buffers, and compacting finished
 sequences. Only after those measurements should custom Triton/CUDA, continuous

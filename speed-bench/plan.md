@@ -1,3 +1,6 @@
+Benchmark status: **complete** on 2026-09-06. This file is the frozen protocol;
+the completed 1/2/4-GPU measurements are in [`REPORT.md`](REPORT.md).
+
 Tools available:
 - iGenVS is a fast molecular docking tool: It has two engines, iGen3, a tranformer-based de novo SMILES generator, Uni-Dock as the main docking engine and AutoDock-GPU as alternative docking engine.
 - gMolAI is a fast graph-based moleculae encoding tool.
