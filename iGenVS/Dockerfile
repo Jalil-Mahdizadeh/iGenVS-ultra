@@ -59,7 +59,11 @@ RUN sed -i 's/\r$//' \
 
 COPY third_party/AutoGrid /src/autogrid
 
-RUN meson setup \
+RUN sed -i 's/\r$//' \
+        /src/autogrid/ad4_shared/paramdat2h.csh \
+        /src/autogrid/ad4_shared/AD4_parameters.dat \
+        /src/autogrid/ad4_shared/AD4.1_bound.dat \
+    && meson setup \
         /src/autogrid/builddir \
         /src/autogrid \
         --prefix=/opt/autogrid \
@@ -79,7 +83,7 @@ RUN test ! -e /usr/local/cuda/lib64/libcuda.so \
     && export GPU_LIBRARY_PATH=/usr/local/cuda/lib64 \
     && cd /src/autodock-gpu \
     && find . -type f -name '*.sh' -exec sed -i 's/\r$//' {} + \
-    && mkdir -p /opt/autodock-gpu/bin \
+    && mkdir -p bin /opt/autodock-gpu/bin \
     && make DEVICE=CUDA NUMWI=64 TARGETS="${ADGPU_TARGETS}" OVERLAP=ON odock \
     && cp bin/autodock_gpu_64wi /opt/autodock-gpu/bin/ \
     && make DEVICE=CUDA NUMWI=128 TARGETS="${ADGPU_TARGETS}" OVERLAP=ON odock \
@@ -169,7 +173,18 @@ RUN test "$(uname -m)" = "x86_64" \
     && igenvs prepare-target --help >/dev/null \
     && igenvs screen --help | grep -q -- --engine \
     && igen3 list-models \
-    && python3 -c "import igenvs, igen3, torch, rdkit, meeko; assert len(igen3.MODEL_SPECS) == 4"
+    && python3 -c "import igenvs, igen3, torch, rdkit, meeko; assert len(igen3.MODEL_SPECS) == 4" \
+    && smoke_dir="$(mktemp -d)" \
+    && igenvs prepare-target \
+        --complex /opt/autodock-gpu-tests/3ce3/3CE3.pdb \
+        --ligand-id A:1FN:1401 \
+        --output-dir "${smoke_dir}/target" >/dev/null \
+    && test -s "${smoke_dir}/target/manifest.json" \
+    && test "$(grep -c '^atom_par ' "${smoke_dir}/target/boron-silicon-atom_par.dat")" -eq 2 \
+    && grep -q '^atom_par Si ' "${smoke_dir}/target/boron-silicon-atom_par.dat" \
+    && grep -q '^atom_par B ' "${smoke_dir}/target/boron-silicon-atom_par.dat" \
+    && grep -q 'Successful Completion' "${smoke_dir}/target/autogrid.log" \
+    && rm -rf "${smoke_dir}"
 
 LABEL org.opencontainers.image.title="iGenVS" \
     org.opencontainers.image.version="0.2.0" \

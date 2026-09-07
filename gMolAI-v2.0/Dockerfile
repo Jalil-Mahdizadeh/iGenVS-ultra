@@ -2,7 +2,7 @@
 
 # NVIDIA NGC PyG 25.09, pinned to its linux/amd64 manifest. The base provides
 # Python 3.12, CUDA 13, PyTorch, PyG 2.7, and GPU code for compute capability
-# 6.0 and newer (including Ampere, Hopper, and Blackwell).
+# 7.5 and newer (including Ampere, Hopper, and Blackwell).
 FROM nvcr.io/nvidia/pyg@sha256:16388647ef8c7384d3f9394f742103b58854c41468e8ae1972162cdfcee9ffa3 AS runtime-amd64
 
 ARG TARGETARCH
@@ -52,7 +52,7 @@ RUN test "$(uname -m)" = "x86_64" \
     && gmolai --version \
     && gmolai-retrain --help >/dev/null \
     && gmolai validate --device cpu >/dev/null \
-    && python -c "import duckdb, pandas, pyarrow, rdkit, scipy, sklearn, torch, torch_geometric, yaml; assert torch_geometric.__version__.split('.')[0] == '2'"
+    && python -c "import duckdb, pandas, pyarrow, rdkit, scipy, sklearn, torch, torch_geometric, yaml; assert torch_geometric.__version__.split('.')[0] == '2'; required = {'sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120', 'compute_120'}; actual = set(torch._C._cuda_getArchFlags().split()); assert required <= actual, sorted(required - actual)"
 
 LABEL org.opencontainers.image.title="gMolAI" \
     org.opencontainers.image.version="0.4.1" \
@@ -64,7 +64,7 @@ LABEL org.opencontainers.image.title="gMolAI" \
     gmolai.cuda.version="13.0.1" \
     gmolai.pytorch.version="2.9.0a0+50eac811a6" \
     gmolai.pyg.version="2.7.0" \
-    gmolai.gpu.compute-capability="6.0+"
+    gmolai.gpu.compute-capability="7.5+"
 
 ENTRYPOINT ["gmolai"]
 CMD ["--help"]
