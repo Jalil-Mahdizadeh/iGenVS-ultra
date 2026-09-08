@@ -96,6 +96,7 @@ class RlCliTests(unittest.TestCase):
                 plan = train_rl(args)
             self.assertEqual(plan["frozen_protocol"]["sha256"], FROZEN_PROTOCOL_SHA256)
             self.assertEqual(len(plan["frozen_protocol"]["stages"]), 4)
+            self.assertNotIn("independent_validation_raw_draws_per_arm", plan["frozen_protocol"])
             self.assertFalse(job.exists())
 
     def test_rl_train_accepts_receptor_and_bound_ligand(self) -> None:
@@ -234,7 +235,6 @@ class RlOutputTests(unittest.TestCase):
                     "model_id": "base-isomeric",
                     "target": "unit-target",
                     "protocol_sha256": FROZEN_PROTOCOL_SHA256,
-                    "validation_passed": True,
                     "artifacts": {
                         "base_isomeric/iGen3_base_isomeric_256d.pth": sha256(weights),
                         "base_isomeric/vocab.pkl": sha256(vocab),
@@ -303,11 +303,12 @@ class RlOutputTests(unittest.TestCase):
                 job,
                 job / "training/final",
                 "unit-target",
-                {"acceptance": {"passed": True}, "rl_checkpoint": {"update": 12}},
             )
             manifest = json.loads((destination / "manifest.json").read_text(encoding="utf-8"))
-            self.assertTrue(manifest["validation_passed"])
-            self.assertEqual(manifest["selected_checkpoint"]["update"], 12)
+            self.assertEqual(
+                manifest["selected_checkpoint"]["selection"],
+                "best checkpoint selected by the frozen online evaluator",
+            )
             self.assertTrue((destination / "base_isomeric/vocab.pkl").is_file())
 
 

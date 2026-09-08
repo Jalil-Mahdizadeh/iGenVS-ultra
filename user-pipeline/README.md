@@ -283,7 +283,7 @@ existing `igenvs prepare-target` CLI, and evaluates policy samples through the
 existing `igenvs screen`/Uni-Dock implementation. Only the policy-gradient,
 reward, stopping, and checkpoint layer is RL-specific. The accepted protocol
 and its implementation are byte-checked before every run; learning rate,
-rewards, stage lengths, chemistry gates, docking modes, and acceptance gates
+rewards, stage lengths, chemistry gates, docking modes, and stopping gates
 cannot be changed from the public CLI.
 
 Train from a single protein-ligand complex PDB:
@@ -308,24 +308,21 @@ an already aligned receptor and single-molecule 3D SDF:
 The workflow is resumable and uses every GPU visible inside the current
 interactive or batch allocation. `--gpu-ids 0,1,2,3` selects four explicit
 devices. It does not submit a scheduler job itself. Use `--dry-run` to verify
-the target, runtime, GPU visibility, frozen hash, stages, and validation plan
+the target, runtime, GPU visibility, frozen hash, and training stages
 without creating the output directory.
 
-After adaptive training, the workflow always performs the frozen independent
-validation: matched 10,000-draw base and RL samples are freshly docked in both
-Uni-Dock `fast` and `balance`; raw invalid/repeated/failed/positive outcomes,
-chemistry, diversity, and distribution gains all remain in the acceptance
-calculation. A failed validation retains the trained model and evidence but
-returns exit status 2. A passing run publishes the selected checkpoint in the
-standard iGen3 model layout at `JOB/model`.
+After adaptive training, the workflow publishes the checkpoint selected by the
+frozen online evaluator in the standard iGen3 model layout at `JOB/model`. It
+does not run a fresh 10,000-molecule base/RL docking comparison. That expensive
+acceptance experiment was used once to validate the protocol on all 8
+development and 5 held-out benchmark receptors and remains research evidence,
+not a step in the user workflow.
 
 ```text
 runs/target-rl/
   target/                         reusable prepared iGenVS target
   training/<stage>/               resumable RL checkpoints and evaluations
   training/timing.json            per-stage wall time and GPU-hours
-  validation/summary.json         independent fast/balance acceptance report
-  validation/timing.json          validation time and GPU-hours
   model/base_isomeric/            selected iGen3 weights and vocabulary
   model/manifest.json             target, protocol, checkpoint, and hashes
   rl-summary.json                 compact final status and output paths

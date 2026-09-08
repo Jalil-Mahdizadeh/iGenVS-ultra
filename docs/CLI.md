@@ -297,11 +297,11 @@ performance flags on this command.
 
 ### `rl-train`
 
-`rl-train` runs the accepted target-oriented iGen3 protocol from target
-preparation through mandatory independent acceptance testing. It accepts the
-runtime and target options documented above plus `--output-dir` and
-`--dry-run`. There are deliberately no public optimizer, reward, docking, or
-stopping overrides.
+`rl-train` runs the accepted target-oriented iGen3 training protocol from
+target preparation through frozen stopping and checkpoint selection. It
+accepts the runtime and target options documented above plus `--output-dir`
+and `--dry-run`. There are deliberately no public optimizer, reward, docking,
+or stopping overrides.
 
 ```bash
 ./igenvs-ultra rl-train \
@@ -319,15 +319,14 @@ The protocol uses base-isomeric iGen3, Uni-Dock/Vina, standard ligand
 preparation, a fixed 5 A pocket, a chemistry-safe percentile warm-up, binary
 balance-mode elite concentration, and a short binary fast-mode refinement.
 Adaptive stages require two consecutive fresh evaluations and are bounded by
-their frozen maximum update counts. Final validation freshly compares matched
-10,000-draw base and RL samples in both `fast` and `balance` modes. The model is
-published at `JOB/model`; `JOB/rl-summary.json` reports whether all acceptance
-gates passed.
+their frozen maximum update counts. The selected model is published at
+`JOB/model` and summarized by `JOB/rl-summary.json`.
 
 The command uses all visible GPUs and records per-stage wall seconds and
 allocated GPU-hours in `JOB/training/timing.json`. It is resumable only with
-the same target, frozen protocol, and GPU count. If validation fails, its model
-and all diagnostics are retained, but the command returns exit status 2.
+the same target, frozen protocol, and GPU count. The 10,000-draw base/RL
+fast/balance docking comparison belongs to the completed development and
+benchmark validation studies and is not repeated by this user command.
 
 Only the iGenVS runtime is used. The existing iGenVS SIF works with
 `--execution apptainer`; the image built from `iGenVS/Dockerfile` works with

@@ -18,9 +18,9 @@ validation, preparation, and physical docking. The ultra workflow will:
    scoring.
 
 The target-specific RL workflow will prepare the same target form through
-iGenVS, run the byte-frozen accepted iGen3/Uni-Dock training and independent
-validation protocol, publish its selected iGen3 model, and generate
-docking-ready valid-unique CSV files through the existing iGen3 CLI.
+iGenVS, run the byte-frozen accepted iGen3/Uni-Dock training protocol, publish
+its selected iGen3 model, and generate docking-ready valid-unique CSV files
+through the existing iGen3 CLI.
 
 ## Interface decisions
 
@@ -77,5 +77,6 @@ docking-ready valid-unique CSV files through the existing iGen3 CLI.
 - RL protocol hash
   `4b9aa7fad0e563bddb28de5edc96d061ac24b1165b4f324a9711e60416d0c03b`
   is fixed. Its four stages, optimizer/reward chemistry gates, adaptive
-  stopping, 10,000-draw fast/balance validation, and acceptance thresholds
-  are not user-overridable.
+  stopping, and checkpoint selection are not user-overridable. The completed
+  10,000-draw fast/balance validation remains protocol evidence and is not part
+  of `rl-train`.

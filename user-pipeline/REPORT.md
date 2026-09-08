@@ -16,8 +16,8 @@ Status: complete
   libraries.
 - `rl-train`: a third independent workflow that prepares one target, invokes
   the accepted byte-frozen iGen3/`igenvs screen` RL implementation, applies
-  its adaptive stopping and mandatory 10,000-draw fast/balance validation, and
-  publishes the selected target-specific model.
+  its adaptive stopping and checkpoint selection, and publishes the selected
+  target-specific model.
 - `rl-generate`: verifies that exported model and delegates valid-unique
   isomeric CSV generation to the existing `igen3 generate` CLI. `doctor` and
   `status` cover the user-facing job types.
@@ -36,8 +36,9 @@ user's bound ligand or loaded from a prepared target.
   ligand SDF, or an existing prepared iGenVS target.
 - RL target input uses that same preparation path and fixed 5 A pocket. The
   public command exposes no optimizer, reward, stopping, or docking overrides.
-- RL jobs record per-stage wall time and GPU-hours, independent validation,
-  the selected checkpoint, model hashes, and a compact final summary.
+- RL jobs record per-stage wall time and GPU-hours, the selected checkpoint,
+  model hashes, and a compact final summary. The completed 10,000-draw
+  fast/balance studies validate the protocol but are not rerun for users.
 - RL generation writes exactly the requested number of canonical RDKit-valid
   unique SMILES as `molecule_id,smiles`, plus a hashed sidecar manifest.
 - Final ultra input accepts CSV/TSV/SMI libraries or streamed iGen3 generation.

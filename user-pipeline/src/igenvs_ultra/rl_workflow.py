@@ -67,7 +67,7 @@ def frozen_rl_bundle(assets: Path) -> tuple[Path, Path, dict[str, Any]]:
     return phase, protocol_path, _read_json(protocol_path)
 
 
-def _runtime_command(assets: Path, action: str, *arguments: str) -> list[str]:
+def _runtime_command(assets: Path, *arguments: str) -> list[str]:
     bootstrap = assets / "user-pipeline/src/igenvs_ultra/rl_runtime.py"
     if not bootstrap.is_file():
         raise PipelineError(f"RL runtime bootstrap is missing: {bootstrap}")
@@ -317,7 +317,7 @@ def _init_stage(
 
     runtime.run_logged(
         "igenvs",
-        _runtime_command(assets, "cli", *arguments),
+        _runtime_command(assets, *arguments),
         job / f"logs/rl-{stage['name']}-init.log",
         gpu=False,
     )
@@ -365,7 +365,6 @@ def _run_training_to(
         "igenvs",
         _runtime_command(
             assets,
-            "cli",
             "train",
             "--job-dir",
             str(stage_dir),
@@ -558,86 +557,19 @@ def _run_adaptive_stage(
     return stopping
 
 
-def _run_validation(
-    *,
-    runtime: Runtime,
-    assets: Path,
-    job: Path,
-    target_name: str,
-    target_dir: Path,
-    final_stage: Path,
-    protocol_path: Path,
-    protocol: dict[str, Any],
-    gpu_count: int,
-) -> dict[str, Any]:
-    output = job / "validation"
-    summary_path = output / "summary.json"
-    checkpoint = final_stage / "checkpoints/best.pt"
-    if not checkpoint.is_file():
-        raise PipelineError(f"final RL stage has no selected best checkpoint: {checkpoint}")
-    if summary_path.is_file():
-        summary = _read_json(summary_path)
-        recorded = summary.get("protocol", {})
-        recorded_protocol = recorded.get("protocol_sha256")
-        recorded_checkpoint = summary.get("rl_checkpoint", {}).get("sha256")
-        if (
-            summary.get("target") != target_name
-            or recorded_protocol != FROZEN_PROTOCOL_SHA256
-            or recorded_checkpoint != sha256(checkpoint)
-            or recorded.get("raw_draws_per_arm") != protocol["validation"]["raw_draws_per_arm"]
-            or recorded.get("sampling_seed") != protocol["validation"]["sampling_seed"]
-        ):
-            raise PipelineError(
-                f"existing RL validation does not match the frozen protocol/checkpoint: {summary_path}"
-            )
-        return summary
-    if output.exists():
-        incomplete = output.with_name(f"validation.incomplete-{int(time.time())}")
-        output.rename(incomplete)
-        print(f"[iGenVS-ultra] retained incomplete RL validation at {incomplete}", flush=True)
-
-    validation = protocol["validation"]
-    runtime.run_logged(
-        "igenvs",
-        _runtime_command(
-            assets,
-            "validate",
-            "--target-id",
-            target_name,
-            "--target",
-            str(target_dir),
-            "--final-stage",
-            str(final_stage),
-            "--output-dir",
-            str(output),
-            "--protocol",
-            str(protocol_path),
-            "--count",
-            str(validation["raw_draws_per_arm"]),
-            "--seed",
-            str(validation["sampling_seed"]),
-            "--shards",
-            str(gpu_count),
-        ),
-        job / "logs/rl-independent-validation.log",
-        gpu=True,
-    )
-    if not summary_path.is_file():
-        raise PipelineError("RL validator did not produce validation/summary.json")
-    return _read_json(summary_path)
-
-
 def _publish_model(
     job: Path,
     final_stage: Path,
     target_name: str,
-    validation: dict[str, Any],
 ) -> Path:
     source = final_stage / "model"
     source_weights = source / RL_MODEL_DIRECTORY / RL_WEIGHTS
     source_vocab = source / RL_MODEL_DIRECTORY / RL_VOCAB
     if not source_weights.is_file() or not source_vocab.is_file():
         raise PipelineError(f"selected RL model export is incomplete: {source}")
+    checkpoint = final_stage / "checkpoints/best.pt"
+    if not checkpoint.is_file():
+        raise PipelineError(f"final RL stage has no selected best checkpoint: {checkpoint}")
 
     destination = job / "model"
     if destination.exists() and not destination.is_dir():
@@ -659,17 +591,15 @@ def _publish_model(
         shutil.copytree(source, temporary)
         os.replace(temporary, destination)
 
-    checkpoint = final_stage / "checkpoints/best.pt"
     manifest = {
         "schema_version": 1,
         "model_id": RL_MODEL_ID,
         "target": target_name,
         "protocol_sha256": FROZEN_PROTOCOL_SHA256,
-        "validation_passed": bool(validation.get("acceptance", {}).get("passed")),
         "selected_checkpoint": {
             "path": str(checkpoint),
             "sha256": sha256(checkpoint),
-            "update": validation.get("rl_checkpoint", {}).get("update"),
+            "selection": "best checkpoint selected by the frozen online evaluator",
         },
         "artifacts": {
             str(Path(RL_MODEL_DIRECTORY) / RL_WEIGHTS): sha256(source_weights),
@@ -683,7 +613,7 @@ def _publish_model(
 
 def train_rl(args: Any) -> dict[str, Any]:
     assets = resolve_assets(args)
-    _, protocol_path, protocol = frozen_rl_bundle(assets)
+    _, _, protocol = frozen_rl_bundle(assets)
     job = Path(args.output_dir).expanduser().resolve()
     gpu_tokens = visible_gpu_tokens(getattr(args, "gpu_ids", None))
     gpu_count = len(gpu_tokens)
@@ -711,10 +641,6 @@ def train_rl(args: Any) -> dict[str, Any]:
                     }
                     for stage in protocol["stages"]
                 ],
-                "independent_validation_raw_draws_per_arm": protocol["validation"][
-                    "raw_draws_per_arm"
-                ],
-                "independent_validation_search_modes": protocol["validation"]["search_modes"],
             },
         }
         print(json.dumps(plan, indent=2, sort_keys=True))
@@ -732,13 +658,8 @@ def train_rl(args: Any) -> dict[str, Any]:
         ):
             raise PipelineError(f"completed RL summary does not match this job: {summary_path}")
         _resolve_model_dir(job / "model")
-        if completed.get("validation_passed"):
-            print(f"[iGenVS-ultra] RL job already complete; model: {job / 'model'}", flush=True)
-            return completed
-        raise PipelineError(
-            "RL training is complete but independent frozen-protocol validation failed; "
-            f"see {job / 'validation/summary.json'}"
-        )
+        print(f"[iGenVS-ultra] RL job already complete; model: {job / 'model'}", flush=True)
+        return completed
     target_dir = prepare_target(args, job, runtime, config)
     _validate_prepared_target(target_dir)
 
@@ -810,24 +731,11 @@ def train_rl(args: Any) -> dict[str, Any]:
 
     if previous_stage is None:
         raise PipelineError("frozen RL protocol contains no training stages")
-    validation = _run_validation(
-        runtime=runtime,
-        assets=assets,
-        job=job,
-        target_name=config["target_name"],
-        target_dir=target_dir,
-        final_stage=previous_stage,
-        protocol_path=protocol_path,
-        protocol=protocol,
-        gpu_count=gpu_count,
-    )
-    model_dir = _publish_model(job, previous_stage, config["target_name"], validation)
+    model_dir = _publish_model(job, previous_stage, config["target_name"])
     timing = _read_json(timing_path)
-    validation_timing_path = job / "validation/timing.json"
-    validation_timing = _read_json(validation_timing_path) if validation_timing_path.is_file() else {}
     summary = {
         "schema_version": 1,
-        "status": "complete" if validation.get("acceptance", {}).get("passed") else "validation_failed",
+        "status": "complete",
         "completed_at": utc_now(),
         "target": config["target_name"],
         "protocol_id": protocol["protocol_id"],
@@ -836,18 +744,10 @@ def train_rl(args: Any) -> dict[str, Any]:
         "training_wall_seconds": timing.get("training_wall_seconds"),
         "training_gpu_hours": timing.get("training_gpu_hours"),
         "training_timing": str(timing_path),
-        "validation_wall_seconds": validation_timing.get("validation_wall_seconds"),
-        "validation_summary": str(job / "validation/summary.json"),
-        "validation_passed": bool(validation.get("acceptance", {}).get("passed")),
         "model_dir": str(model_dir),
         "model_manifest": str(model_dir / "manifest.json"),
     }
     atomic_json(job / "rl-summary.json", summary)
-    if not summary["validation_passed"]:
-        raise PipelineError(
-            "RL training finished and the model was saved, but independent frozen-protocol "
-            f"validation failed; see {job / 'validation/summary.json'}"
-        )
     print(f"[iGenVS-ultra] RL training complete; model: {model_dir}", flush=True)
     return summary
 
@@ -883,7 +783,6 @@ def generate_rl(args: Any) -> dict[str, Any]:
         "runtime": runtime.execution,
         "model_dir": str(model_dir),
         "target": model_manifest.get("target"),
-        "validation_passed": model_manifest.get("validation_passed"),
         "count": int(args.count),
         "seed": int(args.seed),
         "output": str(output),
@@ -974,7 +873,7 @@ def rl_status(job: Path) -> dict[str, Any]:
     }
     if not job.is_dir():
         return result
-    for name in ("rl-config.json", "training/timing.json", "validation/summary.json", "rl-summary.json"):
+    for name in ("rl-config.json", "training/timing.json", "rl-summary.json"):
         path = job / name
         result[name] = _read_json(path) if path.is_file() else {"status": "not-complete"}
     result["model_ready"] = (job / "model/manifest.json").is_file()

@@ -125,9 +125,10 @@ active learning, screening, resume behavior, and all expert controls.
 
 `rl-train` accepts the same target forms as docking: either one complex PDB,
 or a receptor PDB plus its aligned bound 3D ligand SDF. It runs the accepted
-four-stage protocol, its adaptive stopping rules, and the mandatory independent
-10,000-draw base-versus-RL validation in both Uni-Dock `fast` and `balance`
-modes. The scientific settings are frozen and therefore are not CLI knobs.
+four-stage training protocol and its adaptive stopping/checkpoint rules. The
+scientific settings are frozen and therefore are not CLI knobs. The expensive
+10,000-draw base-versus-RL docking was used to validate the protocol on the
+development and benchmark panels; it is intentionally not repeated for users.
 
 ```bash
 ./igenvs-ultra rl-train \
@@ -147,8 +148,8 @@ For separate files:
 
 All visible GPUs are used; restrict them with `--gpu-ids`. Re-running the same
 command resumes completed stages. Training time, allocated GPU-hours, stopping
-records, validation metrics, and the selected deployable model are retained in
-the job. Generate a docking-ready CSV from that model with:
+records, and the selected deployable model are retained in the job. Generate a
+docking-ready CSV from that model with:
 
 ```bash
 ./igenvs-ultra rl-generate \
