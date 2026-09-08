@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "igenvs-ultra-pipeline"
-version = "0.1.0"
-description = "User-facing regular docking and target-specific ultra-scale molecular screening"
+version = "0.2.0"
+description = "User-facing molecular docking, ultra-scale screening, and target-specific iGen3 RL"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}

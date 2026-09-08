@@ -4180,6 +4180,12 @@ def status(args: Any) -> dict[str, Any]:
     if not job.is_dir():
         print(json.dumps(result, indent=2, sort_keys=True))
         return result
+    if (job / "rl-config.json").is_file():
+        from .rl_workflow import rl_status
+
+        result = rl_status(job)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return result
     regular_config = job / "regular-config.json"
     if regular_config.is_file():
         result["workflow"] = "regular-iGenVS-docking"
@@ -4229,6 +4235,13 @@ def status(args: Any) -> dict[str, Any]:
 
 def doctor(args: Any) -> dict[str, Any]:
     assets = resolve_assets(args)
+    from .rl_workflow import FROZEN_PROTOCOL_SHA256, frozen_rl_bundle
+
+    try:
+        frozen_rl_bundle(assets)
+        rl_bundle = {"ok": True, "protocol_sha256": FROZEN_PROTOCOL_SHA256}
+    except PipelineError as exc:
+        rl_bundle = {"ok": False, "error": str(exc)}
     igenvs_image, gmolai_image = resolved_runtime_paths(args, assets)
     igenvs_docker_image, gmolai_docker_image = resolved_docker_images(args)
     scratch_job = assets / "user-pipeline"
@@ -4292,6 +4305,7 @@ def doctor(args: Any) -> dict[str, Any]:
             },
         },
         "required_assets": core_files,
+        "rl_bundle": rl_bundle,
         "fit_assets": {
             "required": require_fit_assets,
             "ready": fit_ready,

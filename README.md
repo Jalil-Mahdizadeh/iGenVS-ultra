@@ -1,10 +1,11 @@
 # iGenVS-ultra
 
-iGenVS-ultra provides two GPU workflows behind one hardware-aware launcher:
+iGenVS-ultra provides three GPU workflows behind one hardware-aware launcher:
 
-- physical molecular docking with iGenVS, using Uni-Dock or AutoDock-GPU; and
+- physical molecular docking with iGenVS, using Uni-Dock or AutoDock-GPU;
 - target-specific ultra screening with iGen3 generation, gMolAI encoding, and
-  a three-member target-head ensemble.
+  a three-member target-head ensemble; and
+- target-specific RL tuning of iGen3 with the accepted docking-driven protocol.
 
 The public launcher detects the GPUs and available CPU/memory resources, then
 chooses its worker counts, batches, shards, and overlap policy automatically.
@@ -51,7 +52,7 @@ Validate the installation and GPU exposure:
 
 See the [complete CLI reference](docs/CLI.md) for every command, accepted
 value, default, and concise description, organized by docking, SMILES
-generation, fitting, and screening.
+generation, fitting, screening, and RL tuning.
 
 `auto` execution prefers complete local Apptainer images when present, then
 the two Docker images above, then a native installation. Pass
@@ -120,6 +121,58 @@ bundle at the repository root or pass its root with `--assets-dir`. See
 [the pipeline guide](user-pipeline/README.md) for target preparation, fitting,
 active learning, screening, resume behavior, and all expert controls.
 
+## Start target-specific RL tuning
+
+`rl-train` accepts the same target forms as docking: either one complex PDB,
+or a receptor PDB plus its aligned bound 3D ligand SDF. It runs the accepted
+four-stage protocol, its adaptive stopping rules, and the mandatory independent
+10,000-draw base-versus-RL validation in both Uni-Dock `fast` and `balance`
+modes. The scientific settings are frozen and therefore are not CLI knobs.
+
+```bash
+./igenvs-ultra rl-train \
+  --complex /absolute/path/protein-ligand-complex.pdb \
+  --ligand-id A:LIG:501 \
+  --output-dir runs/my-target-rl
+```
+
+For separate files:
+
+```bash
+./igenvs-ultra rl-train \
+  --receptor /absolute/path/receptor.pdb \
+  --reference-ligand /absolute/path/bound-ligand.sdf \
+  --output-dir runs/my-target-rl
+```
+
+All visible GPUs are used; restrict them with `--gpu-ids`. Re-running the same
+command resumes completed stages. Training time, allocated GPU-hours, stopping
+records, validation metrics, and the selected deployable model are retained in
+the job. Generate a docking-ready CSV from that model with:
+
+```bash
+./igenvs-ultra rl-generate \
+  --model-dir runs/my-target-rl/model \
+  --count 10000 \
+  --output runs/my-target-rl/candidates.csv
+```
+
+The CSV contains exactly the requested number of RDKit-valid, canonical,
+unique isomeric SMILES with stable `molecule_id` values. It can be passed to
+`igenvs-ultra dock` or the lower-level `igenvs screen` command later;
+generation does not launch docking implicitly.
+
+The RL workflow needs only the iGenVS environment. `auto` can use the existing
+iGenVS SIF, while `--execution docker` uses the
+`igenvs-ultra/igenvs:latest` image built from `iGenVS/Dockerfile`. The public
+launcher bind-mounts the frozen protocol and orchestration source into either
+runtime, so an existing SIF does not need to be rebuilt. An RL-only Docker
+installation can build just that image with:
+
+```bash
+./iGenVS/containers/build-docker.sh igenvs-ultra/igenvs:latest
+```
+
 ## Direct image use
 
 The images also expose their native CLIs:
@@ -142,11 +195,13 @@ docker run --rm --gpus all \
 iGenVS/                 docking/generation source and AMD64 Dockerfile
 gMolAI-v2.0/            released encoder source/models and AMD64 Dockerfile
 user-pipeline/          portable orchestration CLI
+phase-10-rl-dev/        accepted frozen RL protocol and 8-target evidence
+phase-10-rl-bench/      one-shot 5-target generalization evidence
 docs/                   CLI reference and performance engineering notes
 examples/4ag8-screen/   compact ready-to-screen example target head
 complexes/              small docking examples
 speed-bench/            frozen benchmark protocol, scripts, and report
 ```
 
-Generated runs, benchmark payloads, caches, SIFs, and internal study
+Generated runs, raw benchmark payloads, caches, SIFs, and internal study
 workspaces are excluded from Git. Run `make check` before committing changes.

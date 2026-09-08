@@ -1,0 +1,218 @@
+{
+  "base_raw_sample_sha256": {
+    "1iep": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "1nyx": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "1t7r": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "2zv2": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "4f8h": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "4yay": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "5ek0": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "5mzj": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897"
+  },
+  "base_raw_samples_identical": true,
+  "expected_target_count": 8,
+  "passed": true,
+  "protocol_sha256": "4b9aa7fad0e563bddb28de5edc96d061ac24b1165b4f324a9711e60416d0c03b",
+  "targets": {
+    "1iep": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "independent_acceptance_passed": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "failed_acceptance_gates": "none",
+      "passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 18,
+        "04-fast-mode-robustness-refinement": 9
+      }
+    },
+    "1nyx": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "independent_acceptance_passed": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "failed_acceptance_gates": "none",
+      "passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 19,
+        "04-fast-mode-robustness-refinement": 12
+      }
+    },
+    "1t7r": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "independent_acceptance_passed": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "failed_acceptance_gates": "none",
+      "passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 14,
+        "04-fast-mode-robustness-refinement": 4
+      }
+    },
+    "2zv2": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "independent_acceptance_passed": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "failed_acceptance_gates": "none",
+      "passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 14,
+        "04-fast-mode-robustness-refinement": 4
+      }
+    },
+    "4f8h": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "independent_acceptance_passed": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "failed_acceptance_gates": "none",
+      "passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 24,
+        "04-fast-mode-robustness-refinement": 10
+      }
+    },
+    "4yay": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "independent_acceptance_passed": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "failed_acceptance_gates": "none",
+      "passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 22,
+        "04-fast-mode-robustness-refinement": 8
+      }
+    },
+    "5ek0": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "independent_acceptance_passed": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "failed_acceptance_gates": "none",
+      "passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 22,
+        "04-fast-mode-robustness-refinement": 8
+      }
+    },
+    "5mzj": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "independent_acceptance_passed": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "failed_acceptance_gates": "none",
+      "passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 16,
+        "04-fast-mode-robustness-refinement": 3
+      }
+    }
+  }
+}

@@ -1,3 +1,3 @@
-"""User-facing regular iGenVS docking and released iGenVS-ultra orchestration."""
+"""User-facing iGenVS docking, ultra screening, and target-specific RL."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

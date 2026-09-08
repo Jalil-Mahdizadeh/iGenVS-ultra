@@ -1,0 +1,184 @@
+{
+  "schema_version": 5,
+  "protocol_id": "igen3-dual-mode-robust-region-v3-frozen-benchmark",
+  "status": "frozen_benchmark",
+  "description": "One-shot five-receptor benchmark of the operational recipe accepted on all eight development receptors.",
+  "development_lineage": {
+    "parent_protocol_sha256": "b590a3eff903af436b4392b6fb1892ad62f1de456adf00679500184c87d8dc52",
+    "reused_stages": [
+      "01-chemistry-percentile-warmup",
+      "02-binary-elite-transition",
+      "03-robust-region-concentration"
+    ],
+    "reason": "The parent passed every gate on seven targets. On 4f8h, fast top-1% training passed twice online but reproduced at 84.57% in the independent test because scores near the fast boundary were unstable. Moving the final binary target to the base top 0.5% provides a fixed score margin without rewarding unbounded extremes."
+  },
+  "panel": "complexes/bench-panel.txt",
+  "prepared_target_root": "phase-7-benchmark-docking/targets",
+  "base_model": "base-isomeric",
+  "reference_count": 8192,
+  "sampling": {
+    "temperature": 1.0,
+    "top_k": 64
+  },
+  "docking": {
+    "engine": "unidock",
+    "scoring": "vina",
+    "search_mode": "balance",
+    "seed": 181129,
+    "prep_mode": "standard",
+    "pose_output": "none"
+  },
+  "chemistry_qualification": {
+    "require_lipinski": true,
+    "minimum_qed": 0.4,
+    "maximum_absolute_formal_charge": 1,
+    "minimum_fraction_csp3": 0.05,
+    "maximum_aromatic_rings": 4
+  },
+  "stages": [
+    {
+      "name": "01-chemistry-percentile-warmup",
+      "updates": 44,
+      "batch_size": 1024,
+      "evaluation_count": 2048,
+      "evaluation_every": 0,
+      "generator_seed": 71,
+      "learning_rate": 0.00001,
+      "kl_beta": 0.02,
+      "target_kl": 0.05,
+      "reward_mode": "percentile",
+      "tail_fraction": 0.1,
+      "tail_weight": 0.0,
+      "elite_fraction": 0.01,
+      "reward_seen_molecules": true,
+      "require_lipinski": true,
+      "minimum_qed": 0.4,
+      "maximum_absolute_formal_charge": 1,
+      "minimum_fraction_csp3": 0.05,
+      "maximum_aromatic_rings": 4,
+      "reward_occurrence_cap": 32,
+      "fresh_evaluation_docking": true,
+      "minimum_elite_unique": 0,
+      "maximum_top_molecule_fraction": 1.0
+    },
+    {
+      "name": "02-binary-elite-transition",
+      "updates": 20,
+      "batch_size": 4096,
+      "evaluation_count": 4096,
+      "evaluation_every": 2,
+      "generator_seed": 149,
+      "learning_rate": 0.00005,
+      "kl_beta": 0.005,
+      "target_kl": 0.4,
+      "reward_mode": "binary-elite",
+      "elite_fraction": 0.01,
+      "reward_seen_molecules": true,
+      "require_lipinski": true,
+      "minimum_qed": 0.4,
+      "maximum_absolute_formal_charge": 1,
+      "minimum_fraction_csp3": 0.05,
+      "maximum_aromatic_rings": 4,
+      "reward_occurrence_cap": 32,
+      "fresh_evaluation_docking": true,
+      "minimum_elite_unique": 200,
+      "maximum_top_molecule_fraction": 0.2
+    },
+    {
+      "name": "03-robust-region-concentration",
+      "updates": 10,
+      "batch_size": 4096,
+      "evaluation_count": 4096,
+      "evaluation_every": 1,
+      "generator_seed": 163,
+      "learning_rate": 0.0001,
+      "kl_beta": 0.005,
+      "target_kl": 0.6,
+      "reward_mode": "binary-elite",
+      "elite_fraction": 0.01,
+      "reward_seen_molecules": true,
+      "require_lipinski": true,
+      "minimum_qed": 0.4,
+      "maximum_absolute_formal_charge": 1,
+      "minimum_fraction_csp3": 0.05,
+      "maximum_aromatic_rings": 4,
+      "reward_occurrence_cap": 32,
+      "fresh_evaluation_docking": true,
+      "minimum_elite_unique": 200,
+      "maximum_top_molecule_fraction": 0.2,
+      "adaptive_stopping": {
+        "minimum_updates": 10,
+        "block_updates": 1,
+        "maximum_updates": 60,
+        "minimum_qualified_elite_fraction": 0.9,
+        "minimum_qualified_elite_unique": 200,
+        "minimum_chemistry_fraction": 0.9,
+        "maximum_top_molecule_fraction": 0.2,
+        "maximum_positive_score_fraction": 0.01,
+        "consecutive_evaluations": 2
+      }
+    },
+    {
+      "name": "04-fast-mode-robustness-refinement",
+      "search_mode": "fast",
+      "updates": 2,
+      "batch_size": 4096,
+      "evaluation_count": 4096,
+      "evaluation_every": 1,
+      "generator_seed": 193,
+      "learning_rate": 0.00005,
+      "kl_beta": 0.005,
+      "target_kl": 0.65,
+      "reward_mode": "binary-elite",
+      "elite_fraction": 0.005,
+      "reward_seen_molecules": true,
+      "require_lipinski": true,
+      "minimum_qed": 0.4,
+      "maximum_absolute_formal_charge": 1,
+      "minimum_fraction_csp3": 0.05,
+      "maximum_aromatic_rings": 4,
+      "reward_occurrence_cap": 32,
+      "fresh_evaluation_docking": true,
+      "minimum_elite_unique": 200,
+      "maximum_top_molecule_fraction": 0.2,
+      "adaptive_stopping": {
+        "minimum_updates": 2,
+        "block_updates": 1,
+        "maximum_updates": 30,
+        "minimum_qualified_elite_fraction": 0.93,
+        "minimum_qualified_elite_unique": 200,
+        "minimum_chemistry_fraction": 0.9,
+        "maximum_top_molecule_fraction": 0.2,
+        "maximum_positive_score_fraction": 0.01,
+        "consecutive_evaluations": 2
+      }
+    }
+  ],
+  "validation": {
+    "raw_draws_per_arm": 10000,
+    "sampling_seed": 917503,
+    "search_modes": [
+      "fast",
+      "balance"
+    ],
+    "elite_threshold_source": "matched successful base scores at the same search mode"
+  },
+  "acceptance": {
+    "minimum_raw_qualified_elite_fraction": 0.9,
+    "minimum_distinct_qualified_elites": 200,
+    "minimum_raw_chemistry_pass_fraction": 0.9,
+    "minimum_unique_valid_molecules": 500,
+    "maximum_top_molecule_fraction": 0.2,
+    "maximum_positive_score_fraction": 0.01,
+    "minimum_score_improvement": {
+      "score_best_10_mean": 1.0,
+      "score_median": 2.0,
+      "score_p95": 2.0
+    },
+    "required_search_modes": [
+      "fast",
+      "balance"
+    ],
+    "required_development_passes": 8
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "status": "accepted_and_frozen",
+  "accepted_at": "2026-09-08T19:32:47+02:00",
+  "decision": {
+    "development_targets_required": 8,
+    "development_targets_passed": 8,
+    "all_predeclared_gates_passed": true,
+    "benchmark_policy": "one_shot_no_protocol_revision"
+  },
+  "protocol": {
+    "path": "protocol.json",
+    "sha256": "4b9aa7fad0e563bddb28de5edc96d061ac24b1165b4f324a9711e60416d0c03b",
+    "operational_recipe_sha256": "28f6f08fc3760ea80006d342d76b616566d498887c1c46431115bd0bd4b63806"
+  },
+  "evidence": {
+    "integrity_audit_path": "integrity-audit.json",
+    "integrity_audit_sha256": "9aa9628de1d8ecdda63235387ba89aa1f5969dbc95266bc2efb433995494eae0",
+    "report_path": "REPORT.md",
+    "report_sha256": "4e45ad370a311e24343d67a08461affbcdb7900121b689e844cd6dff7b6a7e0b"
+  },
+  "implementation_sha256": {
+    "scripts/run_target.py": "cf871b456549bb6cb1e9a79c3196c1021e420a215d0e1de0d9a804098310eca0",
+    "scripts/validate_target.py": "beba6d8b7149269388dd209aafc54e50cefaee730aeb9a648ba4f6c1f12e1b29",
+    "scripts/aggregate.py": "c6554eba245386b4dd7b576eee0c1eb89be80b89242b5b483ac021e34bbf75a7",
+    "src/igenvs_rl/__init__.py": "50f0991d6bc04a291b9f2667d2c2a46404b672e7164e47c4891bc5bc52535c33",
+    "src/igenvs_rl/__main__.py": "0f7d54f3fbb1f79a85eb8110f11793db99da6f3c61ee979de5abe9a1b5f3fdb3",
+    "src/igenvs_rl/cli.py": "85c3e3fdcb6c675400a15aa2171b76c6bae4a544514d3e053d0b42d4cd739f30",
+    "src/igenvs_rl/oracle.py": "356d1d2f1c2e745db08dffcb4335dda75c476bde86943a8d66a3fa46cd3d2513",
+    "src/igenvs_rl/policy.py": "9a5460600081ada52cb5668751e656add07fb6c72a7e61ca2455522d39cb8c90",
+    "src/igenvs_rl/reward.py": "64263c523313380218a906d948906e219cb9806301a59a2c56daeee18a278082",
+    "src/igenvs_rl/state.py": "be5235c3ccdafd93601fb684ea34f6b4294751adce465b701261cb51c3e968b0",
+    "src/igenvs_rl/trainer.py": "449b681c955a8ebed61fa0f803b4927a6fd9c62e12c189635dd7df8828b60c96"
+  }
+}

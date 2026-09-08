@@ -9,6 +9,12 @@ required=(
     "gMolAI-v2.0/inference/models/SHA256SUMS"
     "phase-5-head-selection/artifacts/input-standardizer.npz"
     "user-pipeline/igenvs-ultra"
+    "user-pipeline/src/igenvs_ultra/rl_runtime.py"
+    "user-pipeline/src/igenvs_ultra/rl_workflow.py"
+    "phase-10-rl-dev/freeze.json"
+    "phase-10-rl-dev/protocol.json"
+    "phase-10-rl-dev/scripts/validate_target.py"
+    "phase-10-rl-dev/src/igenvs_rl/cli.py"
     "examples/4ag8-screen/models/final.json"
 )
 
@@ -28,6 +34,11 @@ bash -n \
 (
     cd "${project_root}/gMolAI-v2.0/inference/models"
     sha256sum --check SHA256SUMS
+)
+
+(
+    cd "${project_root}/phase-10-rl-dev"
+    sha256sum --check freeze.sha256 protocol.sha256
 )
 
 PYTHONDONTWRITEBYTECODE=1 \

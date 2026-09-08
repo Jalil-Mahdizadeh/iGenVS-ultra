@@ -340,8 +340,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="igenvs-ultra",
         description=(
-            "Two explicit workflows: regular iGenVS docking, or iGenVS-ultra "
-            "target-head fitting/AL and streamed scoring."
+            "Three explicit workflows: regular iGenVS docking, iGenVS-ultra "
+            "target-head screening, or target-specific iGen3 RL tuning."
         ),
     )
     parser.add_argument("--version", action="version", version=f"iGenVS-ultra pipeline {__version__}")
@@ -403,19 +403,58 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--output-dir", type=Path, required=True, help="New or resumable target job directory.")
     add_dry_run(run_parser)
 
+    rl_train_parser = subparsers.add_parser(
+        "rl-train",
+        help="Tune iGen3 for one target with the accepted frozen RL protocol.",
+    )
+    add_runtime_arguments(rl_train_parser, include_gmolai=False)
+    add_target_arguments(rl_train_parser)
+    rl_train_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="New or resumable target-specific RL job directory.",
+    )
+    add_dry_run(rl_train_parser)
+
+    rl_generate_parser = subparsers.add_parser(
+        "rl-generate",
+        help="Generate a valid-unique CSV with an exported target-specific RL model.",
+    )
+    add_runtime_arguments(rl_generate_parser, include_gmolai=False)
+    rl_generate_parser.add_argument(
+        "--model-dir",
+        type=Path,
+        required=True,
+        help="Model directory exported by rl-train (JOB/model).",
+    )
+    rl_generate_parser.add_argument(
+        "--count",
+        "--generate-count",
+        dest="count",
+        type=positive_int,
+        required=True,
+        help="Exact number of valid unique SMILES rows to save.",
+    )
+    rl_generate_parser.add_argument("--output", type=Path, required=True, help="New output CSV file.")
+    rl_generate_parser.add_argument("--seed", type=int, default=13, help="iGen3 sampling seed (default: 13).")
+    add_dry_run(rl_generate_parser)
+
     status_parser = subparsers.add_parser("status", help="Show completed and incomplete stages for a job.")
     status_parser.add_argument("--job-dir", type=Path, required=True)
     return parser
 
 
 def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    if args.command in {"dock", "fit", "run"}:
+    if args.command in {"dock", "fit", "run", "rl-train"}:
         if args.receptor and not args.reference_ligand:
             parser.error("--receptor requires --reference-ligand")
         if not args.receptor and args.reference_ligand:
             parser.error("--reference-ligand is valid only with --receptor")
         if not args.complex and args.ligand_id:
             parser.error("--ligand-id is valid only with --complex")
+    if args.command == "rl-train" and args.padding != 5.0:
+        parser.error("rl-train uses the frozen 5 A pocket padding; --padding cannot be changed")
     if args.command in {"screen", "run"}:
         if args.score_threshold is not None:
             if not 0.0 <= args.score_threshold <= 1.0:
@@ -483,6 +522,16 @@ def main(argv: Any = None) -> int:
             fit(args)
             args.job_dir = args.output_dir
             screen(args)
+            return 0
+        if args.command == "rl-train":
+            from .rl_workflow import train_rl
+
+            train_rl(args)
+            return 0
+        if args.command == "rl-generate":
+            from .rl_workflow import generate_rl
+
+            generate_rl(args)
             return 0
         raise PipelineError(f"unknown command: {args.command}")
     except PipelineError as exc:

@@ -13,10 +13,18 @@ Status: complete
   UDRL-train/UDRL-valid docking, frozen three-seed TH0 fitting, optional 1-5
   released AL rounds, and bounded final model screening.
 - `fit` and `screen`: split ultra operation for fitting once and screening many
-  libraries. `doctor` and `status` cover both job types.
+  libraries.
+- `rl-train`: a third independent workflow that prepares one target, invokes
+  the accepted byte-frozen iGen3/`igenvs screen` RL implementation, applies
+  its adaptive stopping and mandatory 10,000-draw fast/balance validation, and
+  publishes the selected target-specific model.
+- `rl-generate`: verifies that exported model and delegates valid-unique
+  isomeric CSV generation to the existing `igen3 generate` CLI. `doctor` and
+  `status` cover the user-facing job types.
 
-The regular and ultra workflows do not invoke one another implicitly. An ultra
-shortlist can be docked explicitly by supplying its `results.csv` to `dock`.
+The docking, ultra-screening, and RL workflows do not invoke one another
+implicitly. An ultra shortlist or RL-generated CSV can be docked explicitly by
+supplying it to `dock`.
 The regular wrapper exposes 53 of the original screen CLI's 56 flag names. The
 three omitted flags are the expert hand-authored geometry path (`--center`,
 `--size`, and `--adgpu-grid`); target geometry is deliberately derived from the
@@ -26,6 +34,12 @@ user's bound ligand or loaded from a prepared target.
 
 - Target input accepts a complex PDB, separate receptor PDB plus aligned 3D
   ligand SDF, or an existing prepared iGenVS target.
+- RL target input uses that same preparation path and fixed 5 A pocket. The
+  public command exposes no optimizer, reward, stopping, or docking overrides.
+- RL jobs record per-stage wall time and GPU-hours, independent validation,
+  the selected checkpoint, model hashes, and a compact final summary.
+- RL generation writes exactly the requested number of canonical RDKit-valid
+  unique SMILES as `molecule_id,smiles`, plus a hashed sidecar manifest.
 - Final ultra input accepts CSV/TSV/SMI libraries or streamed iGen3 generation.
 - Stream size is selected from GPU memory, available host memory, and disk, and
   remains independently overrideable from iGen3's internal batch tuner.
@@ -80,8 +94,17 @@ respectively. The authoritative protocol, yields, stage timings, and all
 
 ## Verification
 
-- Thirty-one lightweight unit/regression tests passed (seven environment-gated
-  integration tests skipped in the host-only invocation).
+- Forty lightweight unit/regression tests passed (seven
+  environment-gated integration tests skipped in the host-only invocation),
+  including frozen-hash, both RL target-input layouts, mutation-free planning,
+  adaptive stopping, model publication, and valid-unique CSV contracts.
+- All 18 frozen RL policy/oracle/reward/stopping tests passed unchanged inside
+  the existing iGenVS SIF.
+- The existing iGenVS SIF passed the RL runtime doctor with iGen3, iGenVS,
+  Uni-Dock, RDKit, Torch, and the visible GPU. An accepted 1IEP checkpoint then
+  generated a real 16-row valid-unique CSV through `rl-generate`. A separate
+  first-stage initialization smoke wrote the exact frozen base-isomeric,
+  Uni-Dock/Vina balance, batch, seed, optimizer, and reward configuration.
 - Real regular iGenVS integration passed: two molecules prepared and docked,
   native `results.csv` produced, and an identical rerun resumed without
   modifying results.

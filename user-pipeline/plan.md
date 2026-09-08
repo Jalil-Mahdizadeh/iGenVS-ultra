@@ -4,7 +4,7 @@ Status: implemented and verified
 
 ## Scope
 
-Build one small CLI, `igenvs-ultra`, with two explicitly separate workflows.
+Build one small CLI, `igenvs-ultra`, with three explicitly separate workflows.
 The regular `dock` workflow will call original iGenVS generation/ingress,
 validation, preparation, and physical docking. The ultra workflow will:
 
@@ -17,15 +17,25 @@ validation, preparation, and physical docking. The ultra workflow will:
    validation, global exact deduplication, gMolAI encoding, and final-ensemble
    scoring.
 
+The target-specific RL workflow will prepare the same target form through
+iGenVS, run the byte-frozen accepted iGen3/Uni-Dock training and independent
+validation protocol, publish its selected iGen3 model, and generate
+docking-ready valid-unique CSV files through the existing iGen3 CLI.
+
 ## Interface decisions
 
-- Commands: `doctor`, `dock`, `fit`, `screen`, `screen-fast`, `run`, and
-  `status`.
+- Commands: `doctor`, `dock`, `fit`, `screen`, `screen-fast`, `run`,
+  `rl-train`, `rl-generate`, and `status`.
 - `dock` is the independent regular iGenVS workflow. It does not fit or invoke
   a target head. Conversely, ultra `run` and `screen` do not physically dock
   their final scored library.
 - `run` is the one-command path; `fit` plus `screen` permits repeated library
   screens without redocking the reference libraries.
+- `rl-train` exposes target/runtime/output choices but no scientific tuning
+  flags. It verifies the accepted protocol and implementation hashes before
+  running and supports identical-command resume.
+- `rl-generate` verifies the published target-model manifest and delegates
+  exact valid-unique isomeric sampling to `igen3 generate`; it does not dock.
 - `screen-fast N`, run inside a completed target job, is the normal optimized
   final-screen interface. Molecule count is its only user input; hardware,
   workers, batches, persistent services, stream size, and profile reuse are
@@ -64,3 +74,8 @@ validation, preparation, and physical docking. The ultra workflow will:
 - Default label protocol is iGenVS Uni-Dock/Vina `--search-mode fast`, 5 A
   target padding, and score-only output. User-selected iGenVS alternatives are
   allowed but explicitly marked as custom rather than release-equivalent.
+- RL protocol hash
+  `4b9aa7fad0e563bddb28de5edc96d061ac24b1165b4f324a9711e60416d0c03b`
+  is fixed. Its four stages, optimizer/reward chemistry gates, adaptive
+  stopping, 10,000-draw fast/balance validation, and acceptance thresholds
+  are not user-overridable.

@@ -75,6 +75,7 @@ slurm-*.out
 /Phase-6-Beyond-AL-Baseline.md
 /FINAL-REPORT.md
 /god-plan.md
+/phase-10-RL.md
 
 # Editor/OS noise and local secrets
 .DS_Store

@@ -1,0 +1,6 @@
+logs/
+*/training/
+*/validation/
+*/run.json
+__pycache__/
+.pytest_cache/

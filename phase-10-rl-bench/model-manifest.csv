@@ -1,0 +1,6 @@
+target,checkpoint_update,final_stage_stop_update,model_path,model_sha256,model_bytes
+1err,7,8,1err/training/04-fast-mode-robustness-refinement/model/base_isomeric/iGen3_base_isomeric_256d.pth,858d32e48747ede55bca94436fca4df8db668698137ee12d36c15e036fd3ebdc,19185393
+4ag8,4,4,4ag8/training/04-fast-mode-robustness-refinement/model/base_isomeric/iGen3_base_isomeric_256d.pth,f6dbc8a1c90a35b30f69017b87acb0c77d3ecc5ed098a21ce075660b65e43676,19185393
+5l2s,7,7,5l2s/training/04-fast-mode-robustness-refinement/model/base_isomeric/iGen3_base_isomeric_256d.pth,d72a43a5ae09a11af572992cc71e20a20165ebb03be8a98925d191a803334163,19185393
+6d6t,5,5,6d6t/training/04-fast-mode-robustness-refinement/model/base_isomeric/iGen3_base_isomeric_256d.pth,d39b54b001c01fc084fc7c47502d62934313d6b3a5f512d53ae11850d75655ac,19185393
+6iiu,12,13,6iiu/training/04-fast-mode-robustness-refinement/model/base_isomeric/iGen3_base_isomeric_256d.pth,d7f8f09b68b57779dc98ba088c97531a5e432dc30f4ed4932c0383ee2846b813,19185393

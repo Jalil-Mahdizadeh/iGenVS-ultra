@@ -1,0 +1,148 @@
+{
+  "base_raw_sample_sha256": {
+    "1err": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "4ag8": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "5l2s": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "6d6t": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897",
+    "6iiu": "b1233542f5d70afc1a80c3be002acf802aa88debd0c95e5d76e9d8553db31897"
+  },
+  "base_raw_samples_identical": true,
+  "endpoint_passed_count": 5,
+  "expected_target_count": 5,
+  "freeze_checks": {
+    "benchmark_protocol_hash_matches_freeze": true,
+    "development_freeze_hash_matches": true,
+    "development_protocol_hash_matches_freeze": true,
+    "implementation_hashes_match": true,
+    "operational_recipe_matches_development": true
+  },
+  "integrity_passed": true,
+  "protocol_sha256": "4ba836f15f065ea1888cafc038e852719a15153ec25d144351023c62125e6d7a",
+  "targets": {
+    "1err": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "endpoint_passed": true,
+      "failed_acceptance_gates": "none",
+      "integrity_passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 25,
+        "04-fast-mode-robustness-refinement": 8
+      }
+    },
+    "4ag8": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "endpoint_passed": true,
+      "failed_acceptance_gates": "none",
+      "integrity_passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 15,
+        "04-fast-mode-robustness-refinement": 4
+      }
+    },
+    "5l2s": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "endpoint_passed": true,
+      "failed_acceptance_gates": "none",
+      "integrity_passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 20,
+        "04-fast-mode-robustness-refinement": 7
+      }
+    },
+    "6d6t": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "endpoint_passed": true,
+      "failed_acceptance_gates": "none",
+      "integrity_passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 22,
+        "04-fast-mode-robustness-refinement": 5
+      }
+    },
+    "6iiu": {
+      "checks": {
+        "adaptive_stage_updates_valid": true,
+        "all_16_validation_manifests_complete": true,
+        "all_online_gates_met": true,
+        "exported_model_exists": true,
+        "fixed_stage_updates_match": true,
+        "paired_csv_has_contiguous_rows": true,
+        "prepared_target_hash_matches": true,
+        "protocol_hash_matches_run": true,
+        "protocol_hash_matches_validation": true,
+        "selected_checkpoint_hash_matches": true,
+        "selected_checkpoint_is_qualified_best": true,
+        "target_identity_matches": true
+      },
+      "endpoint_passed": true,
+      "failed_acceptance_gates": "none",
+      "integrity_passed": true,
+      "stage_updates": {
+        "01-chemistry-percentile-warmup": 44,
+        "02-binary-elite-transition": 20,
+        "03-robust-region-concentration": 24,
+        "04-fast-mode-robustness-refinement": 13
+      }
+    }
+  }
+}

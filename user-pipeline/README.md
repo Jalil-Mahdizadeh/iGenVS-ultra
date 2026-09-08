@@ -1,17 +1,21 @@
 # iGenVS-ultra user pipeline
 
-`igenvs-ultra` exposes two explicit, independent user workflows:
+`igenvs-ultra` exposes three explicit, independent user workflows:
 
 1. `dock` is regular iGenVS: generate or ingest molecules, validate, prepare,
    and physically dock them. It returns ordinary docking scores and poses.
 2. `run` is iGenVS-ultra: dock the fixed UDRL references, fit a frozen
    target-specific ensemble, optionally perform 1-5 active-learning rounds,
    and stream-score a generated or external molecular library.
+3. `rl-train` tunes the base-isomeric iGen3 generator to one receptor with the
+   accepted, frozen docking-driven RL protocol and saves the selected model.
 
 The ultra workflow's final large library is **not docked**. It is validated,
 exactly deduplicated, encoded with gMolAI, and ranked by the final target-head
 ensemble. This is what makes a multi-million-molecule final pass practical.
-The two workflows never launch one another implicitly.
+The three workflows never launch one another implicitly. `rl-generate` only
+samples a saved target-specific model; users decide when to pass its CSV to
+the separate docking workflow.
 
 ## Quick start
 
@@ -271,6 +275,99 @@ The default docking labels reproduce the released protocol: Uni-Dock/Vina,
 and 5 A target padding. The other original iGenVS engine, scoring, preparation,
 batching, pose, and AutoDock-GPU flags remain available. A changed label
 protocol is recorded and visibly marked as custom/non-release-equivalent.
+
+## Workflow 3: target-specific iGen3 RL
+
+The RL workflow starts from `base-isomeric`, prepares the target through the
+existing `igenvs prepare-target` CLI, and evaluates policy samples through the
+existing `igenvs screen`/Uni-Dock implementation. Only the policy-gradient,
+reward, stopping, and checkpoint layer is RL-specific. The accepted protocol
+and its implementation are byte-checked before every run; learning rate,
+rewards, stage lengths, chemistry gates, docking modes, and acceptance gates
+cannot be changed from the public CLI.
+
+Train from a single protein-ligand complex PDB:
+
+```bash
+./igenvs-ultra rl-train \
+  --complex target-complex.pdb \
+  --ligand-id A:LIG:501 \
+  --output-dir runs/target-rl
+```
+
+If there is only one plausible bound ligand, `--ligand-id` is inferred. Or use
+an already aligned receptor and single-molecule 3D SDF:
+
+```bash
+./igenvs-ultra rl-train \
+  --receptor receptor.pdb \
+  --reference-ligand bound-ligand.sdf \
+  --output-dir runs/target-rl
+```
+
+The workflow is resumable and uses every GPU visible inside the current
+interactive or batch allocation. `--gpu-ids 0,1,2,3` selects four explicit
+devices. It does not submit a scheduler job itself. Use `--dry-run` to verify
+the target, runtime, GPU visibility, frozen hash, stages, and validation plan
+without creating the output directory.
+
+After adaptive training, the workflow always performs the frozen independent
+validation: matched 10,000-draw base and RL samples are freshly docked in both
+Uni-Dock `fast` and `balance`; raw invalid/repeated/failed/positive outcomes,
+chemistry, diversity, and distribution gains all remain in the acceptance
+calculation. A failed validation retains the trained model and evidence but
+returns exit status 2. A passing run publishes the selected checkpoint in the
+standard iGen3 model layout at `JOB/model`.
+
+```text
+runs/target-rl/
+  target/                         reusable prepared iGenVS target
+  training/<stage>/               resumable RL checkpoints and evaluations
+  training/timing.json            per-stage wall time and GPU-hours
+  validation/summary.json         independent fast/balance acceptance report
+  validation/timing.json          validation time and GPU-hours
+  model/base_isomeric/            selected iGen3 weights and vocabulary
+  model/manifest.json             target, protocol, checkpoint, and hashes
+  rl-summary.json                 compact final status and output paths
+```
+
+Generate a CSV from the saved target-specific model:
+
+```bash
+./igenvs-ultra rl-generate \
+  --model-dir runs/target-rl/model \
+  --count 10000 \
+  --seed 13 \
+  --output runs/target-rl/candidates.csv
+```
+
+This delegates sampling to the existing `igen3 generate` CLI with the frozen
+isomeric sampling settings. The committed CSV has exactly `N` RDKit-valid,
+canonical, unique SMILES and two columns: `molecule_id,smiles`. A sidecar
+manifest records the model, target, seed, row count, and output hash. To dock
+the candidates later without mixing workflows:
+
+```bash
+./igenvs-ultra dock \
+  --prepared-target runs/target-rl/target \
+  --input runs/target-rl/candidates.csv \
+  --smiles-column smiles \
+  --id-column molecule_id \
+  --output-dir runs/target-rl-docking
+```
+
+Both `rl-train` and `rl-generate` need only the iGenVS environment. Automatic
+execution supports the existing iGenVS SIF. `--execution docker` uses the
+`igenvs-ultra/igenvs:latest` image produced by `iGenVS/Dockerfile`; the
+launcher bind-mounts the source tree and job into either container. gMolAI is
+not involved in RL tuning. Build only the needed Docker image with
+`./iGenVS/containers/build-docker.sh igenvs-ultra/igenvs:latest`.
+
+The protocol passed 8/8 development targets and then 5/5 one-shot held-out
+benchmark targets without revision. See
+[`phase-10-rl-dev/REPORT.md`](../phase-10-rl-dev/REPORT.md) and
+[`phase-10-rl-bench/REPORT.md`](../phase-10-rl-bench/REPORT.md). This is
+evidence across the curated panel, not a guarantee for every possible target.
 
 ## Streaming and hardware selection
 

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "status": "frozen_one_shot_benchmark",
+  "development_freeze": {
+    "path": "../phase-10-rl-dev/freeze.json",
+    "sha256": "32bb9d74ef4354c9fab44a9f01bfe037e2d889b39043854c27f662040e08e3e2",
+    "accepted_development_protocol_sha256": "4b9aa7fad0e563bddb28de5edc96d061ac24b1165b4f324a9711e60416d0c03b"
+  },
+  "benchmark_protocol": {
+    "path": "protocol.json",
+    "sha256": "4ba836f15f065ea1888cafc038e852719a15153ec25d144351023c62125e6d7a",
+    "operational_recipe_sha256": "28f6f08fc3760ea80006d342d76b616566d498887c1c46431115bd0bd4b63806"
+  },
+  "allowed_metadata_differences": [
+    "protocol_id",
+    "status",
+    "description",
+    "panel",
+    "prepared_target_root"
+  ],
+  "benchmark_targets": [
+    "1err",
+    "4ag8",
+    "5l2s",
+    "6d6t",
+    "6iiu"
+  ],
+  "policy": "Run once on all five targets, report every endpoint, and do not revise the protocol from benchmark outcomes.",
+  "implementation_sha256": {
+    "scripts/run_target.py": "cf871b456549bb6cb1e9a79c3196c1021e420a215d0e1de0d9a804098310eca0",
+    "scripts/validate_target.py": "beba6d8b7149269388dd209aafc54e50cefaee730aeb9a648ba4f6c1f12e1b29",
+    "src/igenvs_rl/cli.py": "85c3e3fdcb6c675400a15aa2171b76c6bae4a544514d3e053d0b42d4cd739f30",
+    "src/igenvs_rl/oracle.py": "356d1d2f1c2e745db08dffcb4335dda75c476bde86943a8d66a3fa46cd3d2513",
+    "src/igenvs_rl/policy.py": "9a5460600081ada52cb5668751e656add07fb6c72a7e61ca2455522d39cb8c90",
+    "src/igenvs_rl/reward.py": "64263c523313380218a906d948906e219cb9806301a59a2c56daeee18a278082",
+    "src/igenvs_rl/state.py": "be5235c3ccdafd93601fb684ea34f6b4294751adce465b701261cb51c3e968b0",
+    "src/igenvs_rl/trainer.py": "449b681c955a8ebed61fa0f803b4927a6fd9c62e12c189635dd7df8828b60c96"
+  }
+}
