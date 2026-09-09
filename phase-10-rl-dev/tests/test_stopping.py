@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import json
 from pathlib import Path
+import pytest
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/run_target.py"
@@ -70,3 +72,31 @@ def test_concentration_cannot_hide_collapse_or_bad_chemistry(tmp_path: Path) -> 
         ],
     )
     assert not RUNNER._gate_check(stage, RULE, 11)["passed"]
+
+
+@pytest.mark.parametrize("legacy,stopped", [(False, False), (False, True), (True, False), (True, True)])
+def test_development_wrapper_recovers_before_stopping(tmp_path, monkeypatch, legacy, stopped):
+    stage = json.loads((SCRIPT.parents[1] / "protocol.json").read_text())["stages"][2]
+    (tmp_path / "history.csv").write_text("update,seconds\n10,1\n")
+    if stopped:
+        RUNNER._atomic_json(tmp_path / "stopping.json", {"rule": stage["adaptive_stopping"], "stopped_at_update": 10, "gate_met": True})
+    calls = []
+    def publish(update):
+        RUNNER._atomic_json(tmp_path / "progress.json", {"status": "complete", "completed_updates": update, "model_latest_exported": True})
+    def recover(*args):
+        calls.append("recover")
+        publish(0 if legacy else 10)
+        return 0 if legacy else 10
+    def train(**kwargs):
+        calls.append("train")
+        assert kwargs["requested_total"] == 10
+        publish(10)
+    monkeypatch.setattr(RUNNER, "_recover_stage", recover)
+    monkeypatch.setattr(RUNNER, "_run_training_to", train)
+    monkeypatch.setattr(RUNNER, "_gate_check", lambda *args: {"passed": True})
+    result = RUNNER._run_adaptive_stage(
+        wrapper=SCRIPT, stage_dir=tmp_path, stage=stage, timing_records=[], gpus=1,
+        timing_path=tmp_path / "timing.json", target="fixture", stages=[stage],
+    )
+    assert result["gate_met"]
+    assert calls == (["recover", "train"] if legacy else ["recover"])

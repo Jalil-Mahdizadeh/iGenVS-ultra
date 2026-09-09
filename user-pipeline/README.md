@@ -437,6 +437,42 @@ an HPC allocation: run it inside the desired interactive or batch allocation.
 `--gpu-ids 0,1,2,3`, `--docking-gpus 4`, and `--screen-gpus 4` provide explicit
 hardware control.
 
+## Portability and operational maintenance
+
+These controls do not change docking/search/scoring settings, chemistry filters,
+encoder batch boundaries, ensemble members, RL rewards/stopping rules, optimizer,
+FP32 precision, or the effective RL batch of 4,096 sequences.
+
+- RAM sizing takes the minimum remaining allowance across the process's cgroup
+  and all visible parents (v1/v2), including sibling usage and exhausted limits.
+  Exact screening identities and generator surplus live in SQLite, not
+  whole-library Python sets. Stream size still bounds per-batch memory.
+- Explicit empty, `-1`, `NoDevFiles`, and `void` GPU masks are preserved through
+  child-process launch. Workflows requiring a GPU fail clearly when none are
+  visible; they do not rediscover excluded physical devices.
+- RL backward uses adaptive microbatches with the full-batch mathematical
+  normalization. Sampling first attempts the released full-batch path; an OOM
+  restores RNG state and halves physical cache/model chunks. The fallback
+  replays the original token-major, full-batch random draws, including EOS
+  handling. It neither reduces the scientific batch nor changes precision.
+  A real 4,096-draw test passed with a 2 GiB PyTorch allocator limit and matched
+  the full-batch tokens/RNG state on the test GH200. This is not a guarantee
+  that every 2 GiB GPU can run all RL phases: driver memory and docking need
+  additional capacity. Failure at a one-sequence chunk remains explicit.
+- Generated screening overlaps next-batch generation **and admission** with
+  current-batch scoring. SQLite stays on the controller thread, admission order
+  is unchanged, and at most one future batch is admitted. The requested score
+  count, replenishment, stable IDs, seeds, and scoring boundaries are preserved.
+- Both SIF and Docker launch paths enter the mounted core source through
+  `core_runtime.py`. RL subprocesses inherit source resolution as well, so the
+  installed package in an older image cannot bypass the patched docking guard.
+
+The RL protocol and historical freeze are byte-unchanged. Reviewed operational
+implementation hashes are recorded separately in
+[`maintenance.json`](../phase-10-rl-dev/maintenance.json) and verified before use.
+Historical acceptance/benchmark reports describe their frozen implementations;
+maintenance tests do not replace or re-run scientific acceptance experiments.
+
 ## Resuming and outputs
 
 Every costly step writes an atomic manifest. Re-run the identical command to
@@ -445,6 +481,19 @@ resume. Incomplete iGenVS target/docking directories are retained with an
 docking protocol, library, filtering policy, model checkpoint, or stream size
 requires a new job directory or `--screen-name`; incompatible state is never
 silently mixed.
+
+Regular docking pins its logical partition plan across GPU-count changes,
+skips empty partitions, and verifies exact validated-row coverage. A run with
+zero successful dockings fails; legacy false-complete outputs are reopened on
+resume, including cached top-level manifests.
+
+RL stages reconcile history, evaluation rows, and model exports against
+`checkpoints/latest.pt` before accepting a stopping decision. This recovery does
+not sample, dock, or take an optimizer step. Interrupted reference initialization
+and copying retain their partial directories before retrying; completed reference
+scores are atomically published. Generator request replay restores persisted
+surplus and seen-state; a legacy generated screen without that state must use a
+new screen name rather than silently change its library.
 
 Useful commands:
 

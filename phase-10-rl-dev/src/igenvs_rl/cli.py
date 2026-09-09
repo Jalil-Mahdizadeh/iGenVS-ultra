@@ -17,7 +17,7 @@ from igenvs.target import load_target
 
 from . import __version__
 from .state import JobConfig, load_config, save_config
-from .trainer import evaluate_job, generate_job, train_job
+from .trainer import evaluate_job, generate_job, recover_job, train_job
 
 
 def _positive_int(value: str) -> int:
@@ -191,7 +191,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     train = subparsers.add_parser("train", help="Run or resume policy updates.")
     train.add_argument("--job-dir", type=Path, required=True)
-    train.add_argument("--updates", type=_positive_int, required=True)
+    train_count = train.add_mutually_exclusive_group(required=True)
+    train_count.add_argument("--updates", type=_positive_int)
+    train_count.add_argument(
+        "--target-update",
+        type=_positive_int,
+        help="Run safely to this absolute checkpoint update (idempotent on resume).",
+    )
+
+    recover = subparsers.add_parser("recover", help="Repair checkpoint-derived state and exports without training.")
+    recover.add_argument("--job-dir", type=Path, required=True)
 
     evaluate = subparsers.add_parser("evaluate", help="Freshly sample and dock a checkpoint.")
     evaluate.add_argument("--job-dir", type=Path, required=True)
@@ -382,7 +391,15 @@ def main(argv: list[str] | None = None) -> int:
             _run_init(args)
         elif args.command == "train":
             job_dir = args.job_dir.expanduser().resolve()
-            train_job(job_dir, load_config(job_dir), updates=args.updates)
+            train_job(
+                job_dir,
+                load_config(job_dir),
+                updates=args.updates,
+                target_update=args.target_update,
+            )
+        elif args.command == "recover":
+            job_dir = args.job_dir.expanduser().resolve()
+            recover_job(job_dir, load_config(job_dir))
         elif args.command == "evaluate":
             job_dir = args.job_dir.expanduser().resolve()
             metrics = evaluate_job(

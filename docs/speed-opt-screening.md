@@ -5,6 +5,12 @@ full cold 1/2/4-GPU benchmark are complete as of 2026-09-06. Deeper
 shared-memory, fusion, and decoder-kernel phases remain optional follow-on
 work.
 
+September 9 maintenance supersedes the in-memory identity implementation
+described in the historical checkpoint below: identities/surplus are durable
+SQLite state, and generated admission now overlaps current scoring with bounded
+look-ahead. See [maintenance validation](../speed-bench/MAINTENANCE-2026-09-09.md).
+The frozen September 6 timings and scientific settings are not rewritten.
+
 ## Implementation checkpoint (2026-09-06)
 
 The first optimization pass is now active in `user-pipeline`:

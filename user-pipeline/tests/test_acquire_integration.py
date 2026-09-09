@@ -27,7 +27,7 @@ class AcquisitionIntegrationTests(unittest.TestCase):
         released = json.loads(
             (PROJECT / "phase-8-benchmark-models/models/ensemble-manifest.json").read_text()
         )
-        with tempfile.TemporaryDirectory(dir=str(PROJECT)) as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             job = Path(temporary)
             (job / "fit-config.json").write_text(
                 json.dumps(

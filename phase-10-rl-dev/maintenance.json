@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "status": "operational_maintenance",
+  "updated_at": "2026-09-09",
+  "classification": "recovery_and_memory_fixes_without_protocol_change",
+  "base_freeze": {
+    "path": "freeze.json",
+    "sha256": "32bb9d74ef4354c9fab44a9f01bfe037e2d889b39043854c27f662040e08e3e2"
+  },
+  "protocol": {
+    "path": "protocol.json",
+    "sha256": "4b9aa7fad0e563bddb28de5edc96d061ac24b1165b4f324a9711e60416d0c03b"
+  },
+  "implementation_sha256_overrides": {
+    "scripts/run_target.py": "e1ea540f69b75af4bac5b41a6cb0678390da5abfa817e8af2f7b8e841f288557",
+    "src/igenvs_rl/cli.py": "eef9e2c03b3b5aaf277dd0d14a7136ba3a8115ddd42c23de4d22bfc514e7a40a",
+    "src/igenvs_rl/oracle.py": "439cf6a1afde8b91b43a05a67b0726d584ecdbedf45df4f21fae159280c9d482",
+    "src/igenvs_rl/policy.py": "b9f4d7bc92107d955f573f84740bf81168e1272988340a279b5b485b54e4576e",
+    "src/igenvs_rl/trainer.py": "863ca0c32c25f45b2d9100e63d9d84be68e4181318ad5eaa6dfa6d00ae63ecaa"
+  },
+  "verification": {
+    "full_batch_objective_unchanged": true,
+    "fp32_training_unchanged": true,
+    "full_batch_sampling_rng_order_unchanged": true,
+    "checkpoint_recovery_does_not_sample_or_train": true,
+    "protocol_sha256_unchanged": true
+  }
+}

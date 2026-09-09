@@ -195,13 +195,15 @@ def docker_image_exists(image: str) -> bool:
 
 
 def visible_gpu_tokens(explicit: Optional[str] = None) -> list[str]:
-    if explicit:
+    if explicit is not None:
+        if explicit.strip() in {"", "-1", "NoDevFiles", "void"}:
+            return []
         tokens = [item.strip() for item in explicit.split(",") if item.strip()]
-        if not tokens:
-            raise PipelineError("--gpu-ids did not contain a GPU identifier")
         return tokens
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
-    if visible and visible not in {"-1", "NoDevFiles"}:
+    if "CUDA_VISIBLE_DEVICES" in os.environ:
+        visible = os.environ["CUDA_VISIBLE_DEVICES"].strip()
+        if visible in {"", "-1", "NoDevFiles", "void"}:
+            return []
         return [item.strip() for item in visible.split(",") if item.strip()]
     try:
         result = subprocess.run(
@@ -236,13 +238,57 @@ def gpu_memory_mib() -> list[int]:
 
 
 def available_memory_bytes() -> int:
+    proc_available = 0
     try:
         for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
             if line.startswith("MemAvailable:"):
-                return int(line.split()[1]) * 1024
+                proc_available = int(line.split()[1]) * 1024
+                break
     except (OSError, ValueError, IndexError):
         pass
-    return 0
+
+    # A child may say "max" (or have a looser limit) while a parent limits
+    # the entire job. Include every visible ancestor and its sibling usage.
+    headrooms = []
+    try:
+        entries = Path("/proc/self/cgroup").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        entries = []
+    for entry in entries:
+        fields = entry.split(":", 2)
+        if len(fields) != 3:
+            continue
+        if fields[0] == "0" and not fields[1]:
+            base = Path("/sys/fs/cgroup")
+            limit_name, usage_name = "memory.max", "memory.current"
+        elif "memory" in fields[1].split(","):
+            base = Path("/sys/fs/cgroup/memory")
+            limit_name, usage_name = "memory.limit_in_bytes", "memory.usage_in_bytes"
+        else:
+            continue
+        relative = fields[2].lstrip("/")
+        # Namespace-relative paths can contain ".." for an inaccessible parent;
+        # never read outside the mounted controller. Still inspect its root.
+        leaf = base / relative if ".." not in Path(relative).parts else base
+        roots = [leaf]
+        while roots[-1] != base:
+            roots.append(roots[-1].parent)
+        for root in roots:
+            try:
+                raw_limit = (root / limit_name).read_text(encoding="utf-8").strip()
+                if raw_limit == "max":
+                    continue
+                limit = int(raw_limit)
+                if limit < 0 or limit >= 2**60:
+                    continue
+                current = int((root / usage_name).read_text(encoding="utf-8").strip())
+                headrooms.append(max(0, limit - current))
+            except (OSError, ValueError):
+                continue
+    if headrooms:
+        cgroup_available = min(headrooms)
+        return min(proc_available, cgroup_available) if proc_available > 0 else cgroup_available
+    return proc_available
 
 
 def profile_cache_directory(job: Path) -> Path:
@@ -291,8 +337,8 @@ def choose_stream_batch_size(
         # A score row temporarily owns Python/SMILES metadata and a 1,536-byte
         # FP32 embedding.  Reserve most RAM and scratch for the OS, worker
         # pools, output, resume state, and unusually large molecules.
-        host_bound = max(10_000, int(host_available * 0.20 / 4096)) if host_available else 100_000
-        disk_bound = max(10_000, int(disk_available * 0.10 / 2048))
+        host_bound = max(1, int(host_available * 0.20 / 4096))
+        disk_bound = max(1, int(disk_available * 0.10 / 2048))
         candidates = [per_gpu * max(1, gpu_count), host_bound, disk_bound]
         if molecule_count is not None:
             candidates.append(int(molecule_count))
@@ -328,7 +374,11 @@ class Runtime:
         self.assets = assets.resolve()
         self.job = job.resolve()
         explicit_gpus = getattr(args, "gpu_ids", None)
-        self.gpu_ids = ",".join(visible_gpu_tokens(explicit_gpus)) if explicit_gpus else None
+        self.gpu_ids = (
+            ",".join(visible_gpu_tokens(explicit_gpus))
+            if explicit_gpus is not None
+            else None
+        )
         self.igenvs_image, self.gmolai_image = resolved_runtime_paths(args, assets)
         self.igenvs_docker_image, self.gmolai_docker_image = resolved_docker_images(args)
         requested = getattr(args, "execution", "auto")
@@ -362,6 +412,11 @@ class Runtime:
     ) -> list[str]:
         if not command:
             raise PipelineError("cannot execute an empty command")
+        if tool == "igenvs" and command[0] in {"igenvs", "igen3"}:
+            bootstrap = self.assets / "user-pipeline/src/igenvs_ultra/core_runtime.py"
+            if not bootstrap.is_file():
+                raise PipelineError(f"core runtime bootstrap is missing: {bootstrap}")
+            command = ["python3", str(bootstrap), *command]
         binds = {self.assets}
         try:
             self.job.relative_to(self.assets)
@@ -442,7 +497,7 @@ class Runtime:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         print(f"[iGenVS-ultra] running: {' '.join(full)}", flush=True)
         process_env = os.environ.copy()
-        if gpu and self.gpu_ids:
+        if gpu and self.gpu_ids is not None:
             process_env.update(
                 {
                     "CUDA_VISIBLE_DEVICES": self.gpu_ids,
@@ -479,7 +534,7 @@ class Runtime:
         extra_paths: Sequence[Path] = (),
     ) -> subprocess.CompletedProcess[str]:
         process_env = os.environ.copy()
-        if gpu and self.gpu_ids:
+        if gpu and self.gpu_ids is not None:
             process_env.update(
                 {
                     "CUDA_VISIBLE_DEVICES": self.gpu_ids,
@@ -657,6 +712,30 @@ class PersistentGenerationPool:
             extras.append(Path(args.model_dir).expanduser().resolve())
         profile_cache = profile_cache_directory(job)
         extras.append(profile_cache)
+        state_root = screen / "generation-state"
+        state_root.mkdir(parents=True, exist_ok=True)
+        if args.generation_mode == "de-novo":
+            existing_persistent_markers = []
+            for marker in screen.glob(
+                "batches/batch-*/generation-shards/shard-*/manifest.json"
+            ):
+                try:
+                    if json.loads(marker.read_text(encoding="utf-8")).get(
+                        "persistent_worker"
+                    ):
+                        existing_persistent_markers.append(marker)
+                except (OSError, json.JSONDecodeError):
+                    continue
+            missing_states = [
+                state_root / f"lane-{lane:04d}.sqlite3"
+                for lane in range(len(self.gpu_ids))
+                if not (state_root / f"lane-{lane:04d}.sqlite3").is_file()
+            ]
+            if existing_persistent_markers and missing_states:
+                raise PipelineError(
+                    "cannot safely resume legacy persistent generation without its "
+                    f"state database: {missing_states[0]}; use a new --screen-name"
+                )
         self.workers = []
         for lane, (gpu, affinity) in enumerate(zip(self.gpu_ids, affinities)):
             operation = [
@@ -666,6 +745,7 @@ class PersistentGenerationPool:
                 "--max-batch-size", str(args.generator_max_batch_size),
                 "--expected-count", str(max(1, math.ceil(expected_count / len(self.gpu_ids)))),
                 "--profile-cache", str(profile_cache / "generation.json"),
+                "--state-file", str(state_root / f"lane-{lane:04d}.sqlite3"),
                 "--samples-per-seed", str(args.samples_per_seed),
                 "--max-candidate-multiplier", str(
                     args.max_candidate_multiplier if args.max_candidate_multiplier is not None else 50.0
@@ -716,13 +796,24 @@ class PersistentGenerationPool:
             )
         self.ready = _start_workers(self.workers)
 
-    def run_wave(self, requests: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    def run_wave(
+        self,
+        requests: Sequence[dict[str, Any]],
+        lane_indices: Optional[Sequence[int]] = None,
+    ) -> list[dict[str, Any]]:
         if len(requests) > len(self.workers):
             raise PipelineError("generation wave exceeds the persistent GPU worker count")
+        lanes = list(range(len(requests))) if lane_indices is None else list(lane_indices)
+        if (
+            len(lanes) != len(requests)
+            or len(set(lanes)) != len(lanes)
+            or any(lane < 0 or lane >= len(self.workers) for lane in lanes)
+        ):
+            raise PipelineError("generation wave has invalid persistent worker lanes")
         with ThreadPoolExecutor(max_workers=len(requests)) as executor:
             futures = [
-                executor.submit(worker.request, request)
-                for worker, request in zip(self.workers, requests)
+                executor.submit(self.workers[lane].request, request)
+                for lane, request in zip(lanes, requests)
             ]
             return [future.result() for future in futures]
 
@@ -1328,6 +1419,101 @@ def prepare_shared_docking_library(
     return validated, manifest
 
 
+def _regular_docking_shard_plan(
+    job: Path,
+    validated: Path,
+    validation: dict[str, Any],
+    initial_gpu_count: int,
+) -> dict[str, Any]:
+    """Pin logical shards to the job, independently of resume hardware."""
+
+    output = job / "docking"
+    output.mkdir(parents=True, exist_ok=True)
+    plan_path = output / "shard-plan.json"
+    validated_sha = sha256(validated)
+    if plan_path.is_file():
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        if (
+            plan.get("status") != "complete"
+            or plan.get("validated_sha256") != validated_sha
+            or int(plan.get("logical_shards", 0)) < 1
+        ):
+            raise PipelineError(f"regular docking shard plan is incompatible: {plan_path}")
+        return plan
+
+    runs = output / "runs"
+    legacy_counts: set[int] = set()
+    if runs.is_dir():
+        for manifest_path in runs.glob("shard-*/manifest.json"):
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                legacy_counts.add(int(manifest.get("config", {})["num_shards"]))
+            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+                continue
+    if len(legacy_counts) > 1:
+        raise PipelineError("legacy regular docking shards disagree on their logical shard count")
+    logical_shards = next(iter(legacy_counts), initial_gpu_count)
+    if logical_shards < 1:
+        raise PipelineError("regular docking requires at least one logical shard")
+    if runs.exists() and not legacy_counts:
+        runs.rename(runs.with_name(f"runs.incomplete-{time.time_ns()}"))
+
+    counts = [0] * logical_shards
+    with validated.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if "source_row" not in (reader.fieldnames or []):
+            raise PipelineError(f"validated docking library lacks source_row: {validated}")
+        for row in reader:
+            counts[(int(row["source_row"]) - 1) % logical_shards] += 1
+    expected_rows = int(validation.get("valid_rows", validation.get("valid", sum(counts))))
+    if sum(counts) != expected_rows:
+        raise PipelineError("regular docking shard plan does not cover the validated library")
+    plan = {
+        "schema_version": 1,
+        "status": "complete",
+        "validated": str(validated),
+        "validated_sha256": validated_sha,
+        "logical_shards": logical_shards,
+        "shards": [
+            {"shard_index": index, "input_rows": count}
+            for index, count in enumerate(counts)
+        ],
+    }
+    atomic_json(plan_path, plan)
+    return plan
+
+
+def _regular_results_cover_validated(results: Path, validated: Path) -> bool:
+    """Check the ordered source-row contract without materializing either CSV."""
+
+    try:
+        with results.open("r", encoding="utf-8", newline="") as result_handle, validated.open(
+            "r", encoding="utf-8", newline=""
+        ) as validated_handle:
+            result_reader = csv.DictReader(result_handle)
+            validated_reader = csv.DictReader(validated_handle)
+            if "source_row" not in (result_reader.fieldnames or []) or "source_row" not in (
+                validated_reader.fieldnames or []
+            ):
+                return False
+            while True:
+                result_row = next(result_reader, None)
+                validated_row = next(validated_reader, None)
+                if result_row is None or validated_row is None:
+                    return result_row is None and validated_row is None
+                if int(result_row["source_row"]) != int(validated_row["source_row"]):
+                    return False
+    except (OSError, TypeError, ValueError, KeyError, csv.Error):
+        return False
+
+
+def _docking_completed(manifest: dict[str, Any]) -> bool:
+    """A terminal row set is not successful when every docking failed."""
+    counts = manifest.get("counts", {})
+    successful = counts.get("docked", manifest.get("successful", 0))
+    return manifest.get("status") == "complete" and int(successful) > 0
+
+
 def _launch_regular_docking_shards(
     args: Any,
     runtime: Runtime,
@@ -1335,106 +1521,146 @@ def _launch_regular_docking_shards(
     source: dict[str, Any],
     validated: Path,
     gpus: Sequence[str],
-) -> tuple[list[Path], float]:
+) -> tuple[list[Path], float, dict[str, Any], list[str]]:
+    if not gpus:
+        raise PipelineError("regular docking requires at least one selected GPU")
     output = job / "docking"
     runs = output / "runs"
+    validation = json.loads(
+        (job / "library/validation-manifest.json").read_text(encoding="utf-8")
+    )
+    plan = _regular_docking_shard_plan(job, validated, validation, len(gpus))
     runs.mkdir(parents=True, exist_ok=True)
+    logical_shards = int(plan["logical_shards"])
+    active_shards = [
+        item for item in plan["shards"] if int(item.get("input_rows", 0)) > 0
+    ]
+    if not active_shards:
+        raise PipelineError("regular docking validated library contains no rows")
+    worker_gpus = list(gpus[: min(len(gpus), len(active_shards))])
     affinity = (
         sorted(os.sched_getaffinity(0))
         if hasattr(os, "sched_getaffinity")
         else list(range(os.cpu_count() or 1))
     )
-    groups = partition_cpu_affinity(affinity, len(gpus))
+    groups = partition_cpu_affinity(affinity, len(worker_gpus))
     taskset = shutil.which("taskset")
-    if len(gpus) > 1 and runtime.execution != "docker" and taskset is None:
+    if len(worker_gpus) > 1 and runtime.execution != "docker" and taskset is None:
         raise PipelineError("multi-GPU docking requires the standard 'taskset' utility")
-    pending: list[tuple[int, subprocess.Popen[Any], Any, Path]] = []
     started = time.perf_counter()
-    for shard, (gpu, cores) in enumerate(zip(gpus, groups)):
+    pending_shards: list[dict[str, Any]] = []
+    for shard_record in active_shards:
+        shard = int(shard_record["shard_index"])
         shard_dir = runs / f"shard-{shard}"
         manifest_path = shard_dir / "manifest.json"
-        if manifest_path.is_file():
+        results_path = shard_dir / "results.csv"
+        if manifest_path.is_file() and results_path.is_file():
             existing = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if existing.get("status") == "complete":
+            existing_config = existing.get("config", {})
+            if (
+                _docking_completed(existing)
+                and int(existing_config.get("num_shards", -1)) == logical_shards
+                and int(existing_config.get("shard_index", -1)) == shard
+                and int(existing.get("validation", {}).get("valid", -1))
+                == int(shard_record["input_rows"])
+            ):
                 continue
         if shard_dir.exists():
             shard_dir.rename(
-                shard_dir.with_name(f"{shard_dir.name}.incomplete-{int(time.time())}")
+                shard_dir.with_name(f"{shard_dir.name}.incomplete-{time.time_ns()}")
             )
-        shard_scratch = (
-            Path(args.scratch_dir).expanduser().resolve() / f"regular-shard-{shard}"
-            if args.scratch_dir
-            else None
-        )
-        if shard_scratch is not None:
-            shard_scratch.mkdir(parents=True, exist_ok=True)
-        command = build_regular_docking_command(
-            args,
-            source=source,
-            target=job / "target",
-            output=shard_dir,
-            prevalidated_input=validated,
-            num_shards=len(gpus),
-            shard_index=shard,
-            device_id=0,
-            scratch_dir=shard_scratch,
-        )
-        full = runtime._wrap(
-            "igenvs",
-            command,
-            gpu=True,
-            extra_paths=(*_regular_extra_paths(args, source), validated),
-            cpu_affinity=cores if len(gpus) > 1 else (),
-        )
-        log_path = job / f"logs/regular-docking-shard-{shard}.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log = log_path.open("w", encoding="utf-8", newline="")
-        environment = os.environ.copy()
-        environment.update(
-            {
-                "CUDA_VISIBLE_DEVICES": gpu,
-                "APPTAINERENV_CUDA_VISIBLE_DEVICES": gpu,
-                "OMP_NUM_THREADS": str(len(cores)),
-                "OPENBLAS_NUM_THREADS": "1",
-                "MKL_NUM_THREADS": "1",
-                "PYTHONUNBUFFERED": "1",
-            }
-        )
-        print(
-            f"[iGenVS-ultra] starting regular shard {shard}/{len(gpus)} on GPU {gpu}; "
-            f"CPU affinity={taskset_cpu_list(cores)}",
-            flush=True,
-        )
-        process = subprocess.Popen(full, stdout=log, stderr=subprocess.STDOUT, env=environment)
-        pending.append((shard, process, log, log_path))
-    try:
-        while pending:
-            remaining = []
-            for shard, process, log, log_path in pending:
-                returncode = process.poll()
-                if returncode is None:
-                    remaining.append((shard, process, log, log_path))
-                    continue
+        pending_shards.append(shard_record)
+
+    for wave_start in range(0, len(pending_shards), len(worker_gpus)):
+        wave = pending_shards[wave_start : wave_start + len(worker_gpus)]
+        pending: list[tuple[int, subprocess.Popen[Any], Any, Path]] = []
+        for lane, shard_record in enumerate(wave):
+            shard = int(shard_record["shard_index"])
+            gpu = worker_gpus[lane]
+            cores = groups[lane]
+            shard_dir = runs / f"shard-{shard}"
+            manifest_path = shard_dir / "manifest.json"
+            shard_scratch = (
+                Path(args.scratch_dir).expanduser().resolve() / f"regular-shard-{shard}"
+                if args.scratch_dir
+                else None
+            )
+            if shard_scratch is not None:
+                shard_scratch.mkdir(parents=True, exist_ok=True)
+            command = build_regular_docking_command(
+                args,
+                source=source,
+                target=job / "target",
+                output=shard_dir,
+                prevalidated_input=validated,
+                num_shards=logical_shards,
+                shard_index=shard,
+                device_id=0,
+                scratch_dir=shard_scratch,
+            )
+            full = runtime._wrap(
+                "igenvs",
+                command,
+                gpu=True,
+                extra_paths=(*_regular_extra_paths(args, source), validated),
+                cpu_affinity=cores if len(worker_gpus) > 1 else (),
+            )
+            log_path = job / f"logs/regular-docking-shard-{shard}.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log = log_path.open("w", encoding="utf-8", newline="")
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "CUDA_VISIBLE_DEVICES": gpu,
+                    "APPTAINERENV_CUDA_VISIBLE_DEVICES": gpu,
+                    "OMP_NUM_THREADS": str(len(cores)),
+                    "OPENBLAS_NUM_THREADS": "1",
+                    "MKL_NUM_THREADS": "1",
+                    "PYTHONUNBUFFERED": "1",
+                }
+            )
+            print(
+                f"[iGenVS-ultra] starting regular logical shard {shard}/{logical_shards} "
+                f"on GPU {gpu}; CPU affinity={taskset_cpu_list(cores)}",
+                flush=True,
+            )
+            process = subprocess.Popen(
+                full, stdout=log, stderr=subprocess.STDOUT, env=environment
+            )
+            pending.append((shard, process, log, log_path))
+        try:
+            while pending:
+                remaining = []
+                for shard, process, log, log_path in pending:
+                    returncode = process.poll()
+                    if returncode is None:
+                        remaining.append((shard, process, log, log_path))
+                        continue
+                    log.close()
+                    if returncode:
+                        for _, other, other_log, _ in remaining:
+                            other.terminate()
+                            other_log.close()
+                        raise PipelineError(
+                            f"regular docking shard {shard} failed with exit code {returncode}; "
+                            f"see {log_path}\n{tail(log_path)}"
+                        )
+                    print(f"[iGenVS-ultra] completed regular shard {shard}", flush=True)
+                pending = remaining
+                if pending:
+                    time.sleep(1)
+        except BaseException:
+            for _, process, log, _ in pending:
+                if process.poll() is None:
+                    process.terminate()
                 log.close()
-                if returncode:
-                    for _, other, other_log, _ in remaining:
-                        other.terminate()
-                        other_log.close()
-                    raise PipelineError(
-                        f"regular docking shard {shard} failed with exit code {returncode}; "
-                        f"see {log_path}\n{tail(log_path)}"
-                    )
-                print(f"[iGenVS-ultra] completed regular shard {shard}", flush=True)
-            pending = remaining
-            if pending:
-                time.sleep(1)
-    except BaseException:
-        for _, process, log, _ in pending:
-            if process.poll() is None:
-                process.terminate()
-            log.close()
-        raise
-    return [runs / f"shard-{index}" for index in range(len(gpus))], time.perf_counter() - started
+            raise
+    return (
+        [runs / f"shard-{int(item['shard_index'])}" for item in active_shards],
+        time.perf_counter() - started,
+        plan,
+        worker_gpus,
+    )
 
 
 def _merge_regular_docking_shards(
@@ -1444,21 +1670,33 @@ def _merge_regular_docking_shards(
     gpus: Sequence[str],
     launcher_seconds: float,
     validation: dict[str, Any],
+    *,
+    validated: Optional[Path] = None,
+    logical_shards: Optional[int] = None,
 ) -> dict[str, Any]:
     output = job / "docking"
     manifests = [
         json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
         for directory in shard_dirs
     ]
-    if any(manifest.get("status") != "complete" for manifest in manifests):
-        raise PipelineError("cannot merge incomplete regular docking shards")
+    if any(not _docking_completed(manifest) for manifest in manifests):
+        raise PipelineError("cannot merge incomplete or zero-success regular docking shards")
 
     readers = []
     handles = []
     fields: Optional[list[str]] = None
     heap: list[tuple[int, int, dict[str, str], Any]] = []
     temporary = output / "results.csv.partial"
+    merged_rows = 0
+    expected_path = validated
+    if expected_path is None and validation.get("validated"):
+        expected_path = Path(validation["validated"])
+    expected_handle = None
+    expected_reader = None
     try:
+        if expected_path is not None:
+            expected_handle = expected_path.open("r", encoding="utf-8", newline="")
+            expected_reader = csv.DictReader(expected_handle)
         for shard, directory in enumerate(shard_dirs):
             handle = (directory / "results.csv").open("r", encoding="utf-8", newline="")
             handles.append(handle)
@@ -1482,19 +1720,40 @@ def _merge_regular_docking_shards(
                 source_row, shard, row, reader = heapq.heappop(heap)
                 if source_row <= last_source_row:
                     raise PipelineError("regular docking shards contain duplicate/out-of-order source rows")
+                if expected_reader is not None:
+                    expected_row = next(expected_reader, None)
+                    if expected_row is None or source_row != int(expected_row["source_row"]):
+                        raise PipelineError(
+                            "regular docking shards do not exactly cover the validated library"
+                        )
                 writer.writerow(row)
                 last_source_row = source_row
+                merged_rows += 1
                 following = next(reader, None)
                 if following is not None:
                     heapq.heappush(
                         heap,
                         (int(following["source_row"]), shard, following, reader),
                     )
+            if expected_reader is not None and next(expected_reader, None) is not None:
+                raise PipelineError(
+                    "regular docking shards do not exactly cover the validated library"
+                )
+            expected_rows = int(
+                validation.get("valid_rows", validation.get("valid", merged_rows))
+            )
+            if merged_rows != expected_rows:
+                raise PipelineError(
+                    f"regular docking merge contains {merged_rows:,} rows; "
+                    f"expected {expected_rows:,}"
+                )
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, output / "results.csv")
     finally:
         temporary.unlink(missing_ok=True)
+        if expected_handle is not None:
+            expected_handle.close()
         for handle in handles:
             handle.close()
 
@@ -1553,7 +1812,7 @@ def _merge_regular_docking_shards(
         "engine": args.engine,
         "search_mode": args.search_mode,
         "gpu_ids": list(gpus),
-        "logical_shards": len(shard_dirs),
+        "logical_shards": logical_shards if logical_shards is not None else len(shard_dirs),
         "validation": validation,
         "counts": counts,
         "timings": timings,
@@ -1564,7 +1823,8 @@ def _merge_regular_docking_shards(
                 "manifest_sha256": sha256(directory / "manifest.json"),
                 "results_sha256": sha256(directory / "results.csv"),
             }
-            for index, directory in enumerate(shard_dirs)
+            for directory in shard_dirs
+            for index in [int(directory.name.rsplit("-", 1)[-1])]
         ],
         "outputs": {
             "results": str(output / "results.csv"),
@@ -1617,10 +1877,13 @@ def regular_dock(args: Any) -> dict[str, Any]:
     prepare_target(args, job, runtime, config["target"])
     target_setup_seconds = time.perf_counter() - target_started
     selected_gpus = docking_gpu_ids(args)
+    existing_parallel_plan = (output / "shard-plan.json").is_file() or (
+        output / "runs"
+    ).is_dir()
     automatic_parallel = (
-        len(selected_gpus) > 1
-        and args.num_shards == 1
+        args.num_shards == 1
         and args.shard_index == 0
+        and (len(selected_gpus) > 1 or existing_parallel_plan)
     )
     manifest_path = output / "manifest.json"
     if manifest_path.is_file():
@@ -1631,8 +1894,24 @@ def regular_dock(args: Any) -> dict[str, Any]:
         artifacts_complete = results_path.is_file() and (
             not poses_value or Path(poses_value).exists()
         )
-        if manifest.get("status") == "complete" and artifacts_complete:
+        coverage_complete = True
+        if automatic_parallel:
+            validated_path = job / "library/validation/validated.csv"
+            coverage_complete = validated_path.is_file() and _regular_results_cover_validated(
+                results_path, validated_path
+            )
+        if (
+            _docking_completed(manifest)
+            and artifacts_complete
+            and coverage_complete
+        ):
             print("[iGenVS-ultra] regular iGenVS docking already complete", flush=True)
+        elif automatic_parallel:
+            print(
+                "[iGenVS-ultra] reopening incomplete regular multi-GPU docking output",
+                flush=True,
+            )
+            manifest = {}
         elif not automatic_parallel:
             output.rename(output.with_name(f"docking.incomplete-{int(time.time())}"))
             manifest = {}
@@ -1644,6 +1923,13 @@ def regular_dock(args: Any) -> dict[str, Any]:
             output.rename(output.with_name(f"docking.incomplete-{int(time.time())}"))
     docking_stage_started = time.perf_counter()
     if manifest.get("status") != "complete":
+        # Do not leave an old success summary visible while repairing a
+        # false-complete or damaged job, including when the retry also fails.
+        previous_summary = job / "regular-summary.json"
+        if previous_summary.is_file():
+            previous_summary.rename(
+                previous_summary.with_name(f"regular-summary.incomplete-{time.time_ns()}.json")
+            )
         if automatic_parallel:
             output.mkdir(parents=True, exist_ok=True)
             validated, validation = prepare_shared_docking_library(
@@ -1652,7 +1938,12 @@ def regular_dock(args: Any) -> dict[str, Any]:
                 job,
                 config["source"],
             )
-            shard_dirs, launcher_seconds = _launch_regular_docking_shards(
+            (
+                shard_dirs,
+                launcher_seconds,
+                shard_plan,
+                active_gpus,
+            ) = _launch_regular_docking_shards(
                 args,
                 runtime,
                 job,
@@ -1664,9 +1955,11 @@ def regular_dock(args: Any) -> dict[str, Any]:
                 args,
                 job,
                 shard_dirs,
-                selected_gpus,
+                active_gpus,
                 launcher_seconds,
                 validation,
+                validated=validated,
+                logical_shards=int(shard_plan["logical_shards"]),
             )
         else:
             runtime.run_logged(
@@ -1680,8 +1973,8 @@ def regular_dock(args: Any) -> dict[str, Any]:
             raise PipelineError("iGenVS did not produce a regular docking manifest")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         results_path = Path(manifest.get("outputs", {}).get("results", output / "results.csv"))
-        if manifest.get("status") != "complete" or not results_path.is_file():
-            raise PipelineError(f"regular iGenVS docking did not complete: {manifest_path}")
+        if not _docking_completed(manifest) or not results_path.is_file():
+            raise PipelineError(f"regular iGenVS docking did not complete successfully: {manifest_path}")
     docking_stage_seconds = time.perf_counter() - docking_stage_started
     summary = {
         "schema_version": 1,
@@ -1897,8 +2190,10 @@ def run_docking(
         f"docking/{label}" if label.startswith("UDRL-") else f"al/{label}/docking"
     )
     if (base / "merge-manifest.json").is_file() and (base / "scores.csv").is_file():
-        print(f"[iGenVS-ultra] {label} docking already merged", flush=True)
-        return [], []
+        merged = json.loads((base / "merge-manifest.json").read_text(encoding="utf-8"))
+        if _docking_completed(merged):
+            print(f"[iGenVS-ultra] {label} docking already merged", flush=True)
+            return [], []
     validated_input, validation_manifest = prepare_fit_docking_library(
         args,
         runtime,
@@ -1953,7 +2248,7 @@ def run_docking(
         output = runs / f"shard-{shard}"
         shard_dirs.append(output)
         manifest = output / "manifest.json"
-        if manifest.is_file() and json.loads(manifest.read_text(encoding="utf-8")).get("status") == "complete":
+        if manifest.is_file() and _docking_completed(json.loads(manifest.read_text(encoding="utf-8"))):
             print(f"[iGenVS-ultra] {label} shard {shard} already complete", flush=True)
             continue
         if output.exists():
@@ -2076,8 +2371,10 @@ def merge_docking(
     output = base / "scores.csv"
     merge_manifest = base / "merge-manifest.json"
     if output.is_file() and merge_manifest.is_file():
-        print(f"[iGenVS-ultra] {label} docking merge already complete", flush=True)
-        return output
+        merged = json.loads(merge_manifest.read_text(encoding="utf-8"))
+        if _docking_completed(merged):
+            print(f"[iGenVS-ultra] {label} docking merge already complete", flush=True)
+            return output
     sources, source_fields = load_source_identity(input_path)
     rows: list[Optional[dict[str, str]]] = [None] * len(sources)
     statuses: dict[str, int] = {}
@@ -2121,6 +2418,8 @@ def merge_docking(
         )
     if any(row is None for row in rows):
         raise PipelineError(f"docking merge lacks {sum(row is None for row in rows)} terminal rows")
+    if not statuses.get("success", 0):
+        raise PipelineError("docking produced zero successful ligands; repair the engine and resume")
     assert raw_fields is not None
     preserved_fields = {
         "selection_order", "al_source_row", "acquisition_category", "category_rank",
@@ -2409,6 +2708,7 @@ def open_dedup_database(screen: Path) -> sqlite3.Connection:
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA synchronous=NORMAL")
     connection.execute("CREATE TABLE IF NOT EXISTS smiles (value TEXT PRIMARY KEY, owner INTEGER NOT NULL)")
+    connection.execute("CREATE INDEX IF NOT EXISTS smiles_owner_idx ON smiles(owner)")
     connection.execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     connection.commit()
     return connection
@@ -2471,31 +2771,90 @@ def seed_reference_identities(
 
 
 def replay_completed_admissions(connection: sqlite3.Connection, screen: Path) -> None:
-    for marker in sorted((screen / "batches").glob("batch-*/admission.json")) if (screen / "batches").is_dir() else []:
+    markers = (
+        sorted((screen / "batches").glob("batch-*/admission.json"))
+        if (screen / "batches").is_dir()
+        else []
+    )
+    records: list[dict[str, Any]] = []
+    for marker in markers:
         record = json.loads(marker.read_text(encoding="utf-8"))
-        if record.get("status") != "complete":
-            continue
-        owner = int(record["batch"])
-        prepared = Path(record["prepared"])
-        if not prepared.is_file():
-            raise PipelineError(f"completed admission lacks prepared CSV: {prepared}")
+        if record.get("status") == "complete":
+            records.append(record)
+
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS completed_admission_owners "
+            "(owner INTEGER PRIMARY KEY)"
+        )
+        connection.execute("DELETE FROM completed_admission_owners")
+        connection.executemany(
+            "INSERT INTO completed_admission_owners(owner) VALUES (?)",
+            ((int(record["batch"]),) for record in records),
+        )
+        # Remove identities left by a pre-marker crash from an older release.
+        connection.execute(
+            "DELETE FROM smiles WHERE owner > 0 AND owner NOT IN "
+            "(SELECT owner FROM completed_admission_owners)"
+        )
+        for record in records:
+            _replay_admission_record(connection, record, in_transaction=True)
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+
+
+def _replay_admission_record(
+    connection: sqlite3.Connection,
+    record: dict[str, Any],
+    *,
+    in_transaction: bool = False,
+) -> None:
+    """Make a published admission marker authoritative in the identity DB."""
+
+    owner = int(record["batch"])
+    prepared = Path(record["prepared"])
+    if not prepared.is_file():
+        raise PipelineError(f"completed admission lacks prepared CSV: {prepared}")
+    expected_sha = record.get("prepared_sha256")
+    if expected_sha and sha256(prepared) != expected_sha:
+        raise PipelineError(f"completed admission prepared CSV changed: {prepared}")
+    rejected = Path(record["dedup_rejections"])
+    if not rejected.is_file():
+        raise PipelineError(f"completed admission lacks dedup rejection CSV: {rejected}")
+    rejected_sha = record.get("dedup_rejections_sha256")
+    if rejected_sha and sha256(rejected) != rejected_sha:
+        raise PipelineError(f"completed admission rejection CSV changed: {rejected}")
+    metadata_key = f"admission:{owner}"
+    synchronized = connection.execute(
+        "SELECT value FROM metadata WHERE key=?", (metadata_key,)
+    ).fetchone()
+    if expected_sha and synchronized is not None and synchronized[0] == expected_sha:
+        return
+    if not in_transaction:
+        connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute("DELETE FROM smiles WHERE owner=?", (owner,))
         with prepared.open("r", encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle)
-            values = [(row["smiles"], owner) for row in reader]
-        connection.executemany("INSERT OR IGNORE INTO smiles(value, owner) VALUES (?, ?)", values)
-    connection.commit()
-
-
-def load_seen_smiles(connection: sqlite3.Connection) -> set[str]:
-    """Materialize the exact dedup authority once for O(1) hot-path lookups."""
-    started = time.perf_counter()
-    values = {str(row[0]) for row in connection.execute("SELECT value FROM smiles")}
-    print(
-        f"[iGenVS-ultra] loaded {len(values):,} exact identities into memory "
-        f"in {time.perf_counter() - started:.2f}s",
-        flush=True,
-    )
-    return values
+            connection.executemany(
+                "INSERT INTO smiles(value, owner) VALUES (?, ?) "
+                "ON CONFLICT(value) DO UPDATE SET owner="
+                "CASE WHEN excluded.owner < owner THEN excluded.owner ELSE owner END",
+                ((row["smiles"], owner) for row in reader),
+            )
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata(key, value) VALUES (?, ?)",
+            (metadata_key, expected_sha or sha256(prepared)),
+        )
+        if not in_transaction:
+            connection.commit()
+    except BaseException:
+        if not in_transaction:
+            connection.rollback()
+        raise
 
 
 def validate_library(
@@ -2757,17 +3116,31 @@ def generate_batch(
             ):
                 shard_records[index] = record
                 continue
-        if directory.exists():
+        if directory.exists() and generation_pool is None:
             directory.rename(
                 directory.with_name(f"{directory.name}.incomplete-{time.time_ns()}")
             )
-        directory.mkdir(parents=True)
+        directory.mkdir(parents=True, exist_ok=True)
         pending_plan.append((item, directory, output, shard_marker))
 
     generation_started = time.perf_counter()
     if generation_pool is not None and pending_plan:
-        for wave_start in range(0, len(pending_plan), len(gpu_ids)):
-            wave = pending_plan[wave_start : wave_start + len(gpu_ids)]
+        # Keep every logical shard tied to its original physical lane. A
+        # sparse resume must not compress pending work onto different workers,
+        # because each lane owns an independent durable surplus/seen state.
+        for wave_start in range(0, len(plan), len(gpu_ids)):
+            wave = [
+                item
+                for item in pending_plan
+                if wave_start
+                <= int(item[0]["logical_shard"])
+                < wave_start + len(gpu_ids)
+            ]
+            if not wave:
+                continue
+            lane_indices = [
+                int(item[0]["logical_shard"]) % len(gpu_ids) for item in wave
+            ]
             requests = [
                 {
                     "command": "generate",
@@ -2778,10 +3151,11 @@ def generate_batch(
                 }
                 for item, directory, output, _ in wave
             ]
-            results = generation_pool.run_wave(requests)
-            for lane, ((item, directory, output, shard_marker), result) in enumerate(
-                zip(wave, results)
+            results = generation_pool.run_wave(requests, lane_indices)
+            for lane, item_and_paths, result in zip(
+                lane_indices, wave, results
             ):
+                item, directory, output, shard_marker = item_and_paths
                 if not output.is_file():
                     raise PipelineError(
                         f"persistent iGen3 shard {item['logical_shard']} produced no output"
@@ -2965,7 +3339,6 @@ def admit_batch(
     rows: Sequence[dict[str, str]],
     source_kind: str,
     accepted_offset: int,
-    seen_smiles: Optional[set[str]] = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     batch_dir = screen / f"batches/batch-{batch_number:06d}"
@@ -2973,97 +3346,117 @@ def admit_batch(
     marker = batch_dir / "admission.json"
     if marker.is_file():
         record = json.loads(marker.read_text(encoding="utf-8"))
-        if Path(record["prepared"]).is_file():
+        if record.get("status") == "complete" and Path(record["prepared"]).is_file():
+            # The marker is deliberately published before the SQLite commit.
+            # Replaying it makes either side of a process crash recoverable.
+            _replay_admission_record(connection, record)
             return record
     prepared = batch_dir / "prepared.csv"
     rejected = batch_dir / "dedup-rejections.csv"
     prepared_tmp = prepared.with_suffix(".csv.partial")
     rejected_tmp = rejected.with_suffix(".csv.partial")
-    accepted = 0
-    duplicates = 0
-    hot_seen = seen_smiles if seen_smiles is not None else load_seen_smiles(connection)
-    newly_seen: list[str] = []
     connection.execute("BEGIN IMMEDIATE")
-    connection.execute("DELETE FROM smiles WHERE owner=?", (batch_number,))
     try:
+        connection.execute("DELETE FROM smiles WHERE owner=?", (batch_number,))
+        connection.execute("DELETE FROM metadata WHERE key=?", (f"admission:{batch_number}",))
+        # This map is bounded by the current stream chunk, never library size.
+        # Bulk insert sorted identities directly into the durable index, then
+        # read only this batch's new owners. This avoids a second temporary
+        # B-tree and two full candidate/index joins on every million-row chunk.
+        first_indices: dict[str, int] = {}
+        for index, row in enumerate(rows):
+            first_indices.setdefault(row["canonical_smiles"], index)
+        connection.executemany(
+            "INSERT OR IGNORE INTO smiles(value, owner) VALUES (?, ?)",
+            ((value, batch_number) for value in sorted(first_indices)),
+        )
+        accepted_indices = {
+            first_indices[item[0]]
+            for item in connection.execute(
+                "SELECT value FROM smiles WHERE owner=?", (batch_number,),
+            )
+        }
+        del first_indices
+        accepted = len(accepted_indices)
+        duplicates = len(rows) - accepted
         with prepared_tmp.open("w", encoding="utf-8", newline="") as valid_handle, rejected_tmp.open(
             "w", encoding="utf-8", newline=""
         ) as rejected_handle:
             fields = ["molecule_id", "smiles", "original_smiles", "source_kind", "source_batch", "source_row"]
-            valid_writer = csv.DictWriter(valid_handle, fieldnames=fields, lineterminator="\n")
-            reject_writer = csv.DictWriter(
-                rejected_handle,
-                fieldnames=["molecule_id", "smiles", "source_batch", "source_row", "reason"],
-                lineterminator="\n",
+            valid_writer = csv.writer(valid_handle, lineterminator="\n")
+            reject_writer = csv.writer(rejected_handle, lineterminator="\n")
+            valid_writer.writerow(fields)
+            reject_writer.writerow(
+                ["molecule_id", "smiles", "source_batch", "source_row", "reason"]
             )
-            valid_writer.writeheader()
-            reject_writer.writeheader()
-            for row in rows:
+            accepted_ordinal = 0
+            for index, row in enumerate(rows):
                 canonical = row["canonical_smiles"]
-                if canonical in hot_seen:
-                    duplicates += 1
+                if index not in accepted_indices:
                     reject_writer.writerow(
-                        {
-                            "molecule_id": row["molecule_id"],
-                            "smiles": canonical,
-                            "source_batch": batch_number,
-                            "source_row": row["source_row"],
-                            "reason": "duplicate_canonical_smiles",
-                        }
+                        [
+                            row["molecule_id"],
+                            canonical,
+                            batch_number,
+                            row["source_row"],
+                            "duplicate_canonical_smiles",
+                        ]
                     )
                     continue
-                hot_seen.add(canonical)
-                newly_seen.append(canonical)
-                accepted += 1
+                accepted_ordinal += 1
                 molecule_id = (
-                    f"IGEN3-{accepted_offset + accepted:012d}"
+                    f"IGEN3-{accepted_offset + accepted_ordinal:012d}"
                     if source_kind == "iGen3"
                     else row["molecule_id"]
                 )
                 valid_writer.writerow(
-                    {
-                        "molecule_id": molecule_id,
-                        "smiles": canonical,
-                        "original_smiles": row["original_smiles"],
-                        "source_kind": source_kind,
-                        "source_batch": batch_number,
-                        "source_row": row["source_row"],
-                    }
+                    [
+                        molecule_id,
+                        canonical,
+                        row["original_smiles"],
+                        source_kind,
+                        batch_number,
+                        row["source_row"],
+                    ]
                 )
             valid_handle.flush()
             rejected_handle.flush()
             os.fsync(valid_handle.fileno())
             os.fsync(rejected_handle.fileno())
-        connection.executemany(
-            "INSERT INTO smiles(value, owner) VALUES (?, ?)",
-            ((value, batch_number) for value in newly_seen),
+        os.replace(prepared_tmp, prepared)
+        os.replace(rejected_tmp, rejected)
+        record = {
+            "schema_version": 2,
+            "status": "complete",
+            "batch": batch_number,
+            "source_kind": source_kind,
+            "input_rows": len(rows),
+            "accepted_rows": accepted,
+            "duplicate_rows": duplicates,
+            "prepared": str(prepared),
+            "prepared_sha256": sha256(prepared),
+            "dedup_rejections": str(rejected),
+            "dedup_rejections_sha256": sha256(rejected),
+            "elapsed_seconds": time.perf_counter() - started,
+        }
+        # Publish files and their commit marker before committing identities.
+        # A crash on either side is repaired by marker replay on resume.
+        atomic_json(marker, record)
+        connection.execute(
+            "INSERT OR REPLACE INTO metadata(key, value) VALUES (?, ?)",
+            (f"admission:{batch_number}", record["prepared_sha256"]),
         )
         connection.commit()
+        # The first marker is already crash-safe. Refresh only its timing so
+        # benchmarks include identity insertion/commit, not just CSV writing.
+        record["elapsed_seconds"] = time.perf_counter() - started
+        atomic_json(marker, record)
+        return record
     except BaseException:
         connection.rollback()
-        for value in newly_seen:
-            hot_seen.discard(value)
         prepared_tmp.unlink(missing_ok=True)
         rejected_tmp.unlink(missing_ok=True)
         raise
-    os.replace(prepared_tmp, prepared)
-    os.replace(rejected_tmp, rejected)
-    record = {
-        "schema_version": 1,
-        "status": "complete",
-        "batch": batch_number,
-        "source_kind": source_kind,
-        "input_rows": len(rows),
-        "accepted_rows": accepted,
-        "duplicate_rows": duplicates,
-        "prepared": str(prepared),
-        "prepared_sha256": sha256(prepared),
-        "dedup_rejections": str(rejected),
-        "dedup_rejections_sha256": sha256(rejected),
-        "elapsed_seconds": time.perf_counter() - started,
-    }
-    atomic_json(marker, record)
-    return record
 
 
 def write_empty_score_batch(output: Path, input_path: Path, model_manifest: Path) -> None:
@@ -3674,7 +4067,6 @@ def process_external_screen(
     connection: sqlite3.Connection,
     batch_size: int,
     model_manifest: Path,
-    seen_smiles: set[str],
     score_pool: Optional[PersistentScorePool] = None,
 ) -> list[dict[str, Any]]:
     source = Path(args.input).expanduser().resolve()
@@ -3691,29 +4083,54 @@ def process_external_screen(
     )
     records = []
     accepted_total = 0
-    for batch_number, rows in enumerate(iter_csv_chunks(Path(validation["validated"]), batch_size), start=1):
-        admission = admit_batch(
-            connection,
-            screen,
-            batch_number,
-            rows,
-            "external",
-            accepted_total,
-            seen_smiles,
-        )
-        accepted_total += int(admission["accepted_rows"])
-        score = score_batch(
-            runtime,
-            args,
-            job,
-            assets,
-            screen,
-            batch_number,
-            admission,
-            model_manifest,
-            score_pool,
-        )
-        records.append({"batch": batch_number, "admission": admission, "score": score})
+    pending_score = None
+    with ThreadPoolExecutor(max_workers=1) as score_executor:
+        for batch_number, rows in enumerate(
+            iter_csv_chunks(Path(validation["validated"]), batch_size), start=1
+        ):
+            admission = admit_batch(
+                connection,
+                screen,
+                batch_number,
+                rows,
+                "external",
+                accepted_total,
+            )
+            accepted_total += int(admission["accepted_rows"])
+            if pending_score is not None:
+                previous_batch, previous_admission, future = pending_score
+                records.append(
+                    {
+                        "batch": previous_batch,
+                        "admission": previous_admission,
+                        "score": future.result(),
+                    }
+                )
+            pending_score = (
+                batch_number,
+                admission,
+                score_executor.submit(
+                    score_batch,
+                    runtime,
+                    args,
+                    job,
+                    assets,
+                    screen,
+                    batch_number,
+                    admission,
+                    model_manifest,
+                    score_pool,
+                ),
+            )
+        if pending_score is not None:
+            previous_batch, previous_admission, future = pending_score
+            records.append(
+                {
+                    "batch": previous_batch,
+                    "admission": previous_admission,
+                    "score": future.result(),
+                }
+            )
     return records
 
 
@@ -3726,7 +4143,6 @@ def process_generated_screen(
     connection: sqlite3.Connection,
     batch_size: int,
     model_manifest: Path,
-    seen_smiles: set[str],
     generation_pool: Optional[PersistentGenerationPool] = None,
     score_pool: Optional[PersistentScorePool] = None,
 ) -> list[dict[str, Any]]:
@@ -3745,7 +4161,25 @@ def process_generated_screen(
     # wasteful full-size tail. Encoding rejections are replenished afterwards.
     overlap = generation_pool is not None and score_pool is not None
     generation_executor = ThreadPoolExecutor(max_workers=1) if overlap else None
-    pending_generation = None
+    score_executor = ThreadPoolExecutor(max_workers=1) if overlap else None
+    pending_admission = None
+
+    def prepare(raw: Path, number: int, offset: int):
+        # SQLite remains controller-owned. Only scoring runs on the background
+        # thread; validation/admission can overlap it without changing order.
+        batch_dir = screen / f"batches/batch-{number:06d}"
+        if args.fragment_policy == "reject":
+            rows, validation = generated_rows_from_iGen3_contract(raw, batch_dir / "validation")
+        else:
+            validation = validate_library(
+                runtime, args, raw, batch_dir / "validation", batch_dir / "validation.log",
+                input_format="smi", smiles_column="smiles", id_column=None, delimiter="auto",
+            )
+            with Path(validation["validated"]).open("r", encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+        admission = admit_batch(connection, screen, number, rows, "iGen3", offset)
+        return validation, admission
+
     try:
         while committed_total < target_count:
             if batch_number > maximum_batches:
@@ -3754,7 +4188,7 @@ def process_generated_screen(
                     f"{maximum_batches} stream batches; increase --max-stream-batches"
                 )
             requested = min(batch_size, target_count - committed_total)
-            if pending_generation is None:
+            if pending_admission is None:
                 raw, generation = generate_batch(
                     runtime,
                     args,
@@ -3763,39 +4197,10 @@ def process_generated_screen(
                     requested,
                     generation_pool,
                 )
+                validation, admission = prepare(raw, batch_number, admitted_total)
             else:
-                raw, generation = pending_generation.result()
-                pending_generation = None
-            batch_dir = screen / f"batches/batch-{batch_number:06d}"
-            if args.fragment_policy == "reject":
-                rows, validation = generated_rows_from_iGen3_contract(
-                    raw, batch_dir / "validation"
-                )
-            else:
-                validation = validate_library(
-                    runtime,
-                    args,
-                    raw,
-                    batch_dir / "validation",
-                    batch_dir / "validation.log",
-                    input_format="smi",
-                    smiles_column="smiles",
-                    id_column=None,
-                    delimiter="auto",
-                )
-                with Path(validation["validated"]).open(
-                    "r", encoding="utf-8", newline=""
-                ) as handle:
-                    rows = list(csv.DictReader(handle))
-            admission = admit_batch(
-                connection,
-                screen,
-                batch_number,
-                rows,
-                "iGen3",
-                admitted_total,
-                seen_smiles,
-            )
+                generation, validation, admission = pending_admission
+                pending_admission = None
             accepted = int(admission["accepted_rows"])
             minimum_next = target_count - committed_total - accepted
             prefetched_next = overlap and minimum_next > 0
@@ -3811,17 +4216,20 @@ def process_generated_screen(
                     next_requested,
                     generation_pool,
                 )
-            score = score_batch(
-                runtime,
-                args,
-                job,
-                assets,
-                screen,
-                batch_number,
-                admission,
-                model_manifest,
-                score_pool,
+            score_arguments = (
+                runtime, args, job, assets, screen, batch_number, admission, model_manifest, score_pool,
             )
+            if score_executor is not None:
+                future_score = score_executor.submit(score_batch, *score_arguments)
+                if prefetched_next:
+                    next_raw, next_generation = pending_generation.result()
+                    next_validation, next_admission = prepare(
+                        next_raw, batch_number + 1, admitted_total + accepted,
+                    )
+                    pending_admission = (next_generation, next_validation, next_admission)
+                score = future_score.result()
+            else:
+                score = score_batch(*score_arguments)
             committed = int(score.get("encoded_rows", 0))
             records.append(
                 {
@@ -3831,6 +4239,7 @@ def process_generated_screen(
                     "admission": admission,
                     "score": score,
                     "prefetched_next_generation": prefetched_next,
+                    "prefetched_next_admission": prefetched_next,
                 }
             )
             admitted_total += accepted
@@ -3849,6 +4258,8 @@ def process_generated_screen(
     finally:
         if generation_executor is not None:
             generation_executor.shutdown(wait=True, cancel_futures=True)
+        if score_executor is not None:
+            score_executor.shutdown(wait=True, cancel_futures=True)
     if committed_total != target_count:
         raise PipelineError(
             f"generated screen committed {committed_total:,} scores; expected exactly {target_count:,}"
@@ -4045,7 +4456,6 @@ def screen(args: Any) -> dict[str, Any]:
             connection, screen_dir, assets, enabled=args.exclude_reference_libraries
         )
         replay_completed_admissions(connection, screen_dir)
-        seen_smiles = load_seen_smiles(connection)
         persistent = config["execution_engine"] in {"persistent_v1", "persistent_v2"}
         worker_started = time.perf_counter()
         worker_startup_seconds = 0.0
@@ -4089,7 +4499,6 @@ def screen(args: Any) -> dict[str, Any]:
                 connection,
                 batch_size,
                 model_manifest,
-                seen_smiles,
                 score_pool,
             )
         else:
@@ -4102,7 +4511,6 @@ def screen(args: Any) -> dict[str, Any]:
                 connection,
                 batch_size,
                 model_manifest,
-                seen_smiles,
                 generation_pool,
                 score_pool,
             )

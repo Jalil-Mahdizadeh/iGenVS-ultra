@@ -5,6 +5,12 @@ the requested cold 1/2/4-GPU matrix completed on 2026-09-06. The original
 pre-optimization audit is retained as historical rationale; larger
 sustained/cache/pose experiments remain optional follow-on work.
 
+September 9 maintenance adds GPU-count-independent resume plans, exact row
+coverage checks, empty-shard skipping, and rejection/reopening of zero-success
+jobs. Mounted core source is used even with an older SIF. These are recovery
+and failure-contract changes, not changes to docking/search parameters; see
+[the operational guide](../user-pipeline/README.md#portability-and-operational-maintenance).
+
 ## Scope
 
 This audit covers both docking routes in `user-pipeline`:

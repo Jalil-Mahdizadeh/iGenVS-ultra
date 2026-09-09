@@ -10,8 +10,10 @@ required=(
     "phase-5-head-selection/artifacts/input-standardizer.npz"
     "user-pipeline/igenvs-ultra"
     "user-pipeline/src/igenvs_ultra/rl_runtime.py"
+    "user-pipeline/src/igenvs_ultra/core_runtime.py"
     "user-pipeline/src/igenvs_ultra/rl_workflow.py"
     "phase-10-rl-dev/freeze.json"
+    "phase-10-rl-dev/maintenance.json"
     "phase-10-rl-dev/protocol.json"
     "phase-10-rl-dev/scripts/validate_target.py"
     "phase-10-rl-dev/src/igenvs_rl/cli.py"
@@ -64,6 +66,7 @@ print("release metadata: valid JSON")
 PY
 
 if git -C "${project_root}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "${project_root}" diff --check
     if git -C "${project_root}" rev-parse --verify HEAD >/dev/null 2>&1; then
         git -C "${project_root}" show --check --format= HEAD
     else

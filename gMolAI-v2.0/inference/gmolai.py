@@ -779,11 +779,19 @@ def run_encode(args: argparse.Namespace) -> dict[str, Any]:
             close_encoder()
 
         require(total_rows > 0, "Input CSV contains no data rows")
-        require(
-            store.accepted_count > 0,
-            "No input molecule passed the release policy",
-        )
-        disk_arrays, unique_accepted_molecules = store.materialize_arrays()
+        if store.accepted_count > 0:
+            disk_arrays, unique_accepted_molecules = store.materialize_arrays()
+        else:
+            disk_arrays = {
+                "embeddings": np.empty((0, EMBEDDING_DIMENSIONS), dtype=np.float32),
+                "input_row": np.empty((0,), dtype=np.int64),
+                "input_id": np.empty((0,), dtype="<U1"),
+                "input_smiles": np.empty((0,), dtype="<U1"),
+                "canonical_smiles": np.empty((0,), dtype="<U1"),
+                "molecule_hash": np.empty((0,), dtype="<U1"),
+                "atom_count": np.empty((0,), dtype=np.int32),
+            }
+            unique_accepted_molecules = 0
         embeddings = disk_arrays["embeddings"]
         require(
             embeddings.shape

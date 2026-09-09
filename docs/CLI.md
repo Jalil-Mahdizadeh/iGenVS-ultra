@@ -78,6 +78,15 @@ either RL command.
 The launcher never requests an HPC allocation. Run it inside the interactive,
 Slurm, or other allocation whose GPUs and CPUs it should use.
 
+`--gpu-ids ""` and `--gpu-ids=-1` explicitly disable GPUs; an empty or disabled
+`CUDA_VISIBLE_DEVICES` is not treated as permission to discover physical GPUs.
+GPU-required workflows then stop with an actionable error. Automatic RAM sizing
+honors the tightest visible cgroup v1/v2 ancestor, not only host `MemAvailable`.
+The container supplies dependencies while the launcher executes the mounted
+core source; existing SIFs therefore pick up operational fixes without a rebuild.
+See [portability and recovery](../user-pipeline/README.md#portability-and-operational-maintenance)
+for sampling microbatches, exact-count screening overlap, and checkpoint repair.
+
 ## Targets and job locations
 
 The target options apply to `dock`, `fit`, `run`, and `rl-train`. Choose exactly

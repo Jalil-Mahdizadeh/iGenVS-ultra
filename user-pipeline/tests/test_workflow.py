@@ -14,10 +14,15 @@ from pathlib import Path
 from igenvs_ultra.cli import build_parser, discover_fast_job, validate_args
 from igenvs_ultra.workflow import (
     _merge_regular_docking_shards,
+    _regular_docking_shard_plan,
+    _regular_results_cover_validated,
     admit_batch,
     aligned_score_shard_lengths,
+    available_memory_bytes,
     build_regular_docking_command,
+    choose_stream_batch_size,
     docking_gpu_ids,
+    generate_batch,
     generation_logical_shard_count,
     generation_shard_plan,
     generated_rows_from_iGen3_contract,
@@ -26,12 +31,16 @@ from igenvs_ultra.workflow import (
     prepare_score_shards,
     open_dedup_database,
     partition_cpu_affinity,
+    process_external_screen,
     process_generated_screen,
     regular_dock,
+    replay_completed_admissions,
     Runtime,
     seed_reference_identities,
     screening_gpu_ids,
+    sha256,
     taskset_cpu_list,
+    visible_gpu_tokens,
 )
 
 
@@ -288,6 +297,73 @@ class DedupTests(unittest.TestCase):
             self.assertEqual(second["duplicate_rows"], 1)
             connection.close()
 
+    def test_admission_marker_repairs_a_precommit_crash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            screen = Path(temporary)
+            connection = open_dedup_database(screen)
+            rows = [
+                {
+                    "molecule_id": "a",
+                    "original_smiles": "CC",
+                    "canonical_smiles": "CC",
+                    "source_row": "1",
+                }
+            ]
+            from igenvs_ultra import workflow
+
+            original_atomic_json = workflow.atomic_json
+
+            def publish_then_interrupt(path, value):
+                original_atomic_json(path, value)
+                if path.name == "admission.json":
+                    raise KeyboardInterrupt("injected before SQLite commit")
+
+            with mock.patch(
+                "igenvs_ultra.workflow.atomic_json", side_effect=publish_then_interrupt
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    admit_batch(connection, screen, 1, rows, "external", 0)
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM smiles").fetchone()[0], 0
+            )
+            recovered = admit_batch(connection, screen, 1, rows, "external", 0)
+            self.assertEqual(recovered["accepted_rows"], 1)
+            self.assertEqual(
+                connection.execute("SELECT value, owner FROM smiles").fetchall(),
+                [("CC", 1)],
+            )
+            connection.close()
+
+    def test_replay_removes_legacy_commit_without_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            screen = Path(temporary)
+            connection = open_dedup_database(screen)
+            connection.execute(
+                "INSERT INTO smiles(value, owner) VALUES ('CC', 1)"
+            )
+            connection.commit()
+            replay_completed_admissions(connection, screen)
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM smiles").fetchone()[0], 0
+            )
+            record = admit_batch(
+                connection,
+                screen,
+                1,
+                [
+                    {
+                        "molecule_id": "a",
+                        "original_smiles": "CC",
+                        "canonical_smiles": "CC",
+                        "source_row": "1",
+                    }
+                ],
+                "external",
+                0,
+            )
+            self.assertEqual(record["accepted_rows"], 1)
+            connection.close()
+
 
 class DockingMergeTests(unittest.TestCase):
     def test_cpu_affinity_is_disjoint_and_complete(self) -> None:
@@ -384,6 +460,147 @@ class DockingMergeTests(unittest.TestCase):
             self.assertEqual(manifest["counts"], {"docked": 6, "prepared": 6})
             self.assertEqual(manifest["gpu_ids"], ["GPU-a", "GPU-b"])
             self.assertEqual(manifest["timings"]["parallel_docking_wall_seconds"], 11.0)
+
+    def test_regular_plan_pins_logical_shards_and_skips_empty_partitions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            job = Path(temporary)
+            validated = job / "validated.csv"
+            with validated.open("w", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["source_row"])
+                writer.writeheader()
+                for source_row in (1, 2, 3):
+                    writer.writerow({"source_row": source_row})
+            plan = _regular_docking_shard_plan(
+                job, validated, {"valid_rows": 3}, initial_gpu_count=4
+            )
+            self.assertEqual(plan["logical_shards"], 4)
+            self.assertEqual(
+                [item["input_rows"] for item in plan["shards"]], [1, 1, 1, 0]
+            )
+            resumed = _regular_docking_shard_plan(
+                job, validated, {"valid_rows": 3}, initial_gpu_count=2
+            )
+            self.assertEqual(resumed, plan)
+
+    def test_regular_plan_recovers_legacy_four_way_resume_on_two_gpus(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            job = Path(temporary)
+            validated = job / "validated.csv"
+            with validated.open("w", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["source_row"])
+                writer.writeheader()
+                for source_row in range(1, 9):
+                    writer.writerow({"source_row": source_row})
+            legacy = job / "docking/runs/shard-0"
+            legacy.mkdir(parents=True)
+            (legacy / "manifest.json").write_text(
+                json.dumps({"config": {"num_shards": 4, "shard_index": 0}}),
+                encoding="utf-8",
+            )
+            plan = _regular_docking_shard_plan(
+                job, validated, {"valid_rows": 8}, initial_gpu_count=2
+            )
+            self.assertEqual(plan["logical_shards"], 4)
+            self.assertEqual(
+                [item["input_rows"] for item in plan["shards"]], [2, 2, 2, 2]
+            )
+
+    def test_regular_merge_rejects_missing_partition_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            job = Path(temporary)
+            fields = ["molecule_id", "source_row", "status", "docking_score"]
+            shard_dirs = []
+            for shard, source_rows in enumerate(((1, 5), (2, 6))):
+                directory = job / f"docking/runs/shard-{shard}"
+                directory.mkdir(parents=True)
+                (directory / "manifest.json").write_text(
+                    json.dumps({"status": "complete", "counts": {"docked": 2}}),
+                    encoding="utf-8",
+                )
+                with (directory / "results.csv").open("w", newline="") as handle:
+                    writer = csv.DictWriter(handle, fieldnames=fields)
+                    writer.writeheader()
+                    for source_row in source_rows:
+                        writer.writerow(
+                            {
+                                "molecule_id": f"mol-{source_row}",
+                                "source_row": source_row,
+                                "status": "success",
+                                "docking_score": -source_row,
+                            }
+                        )
+                shard_dirs.append(directory)
+            args = argparse.Namespace(
+                engine="unidock", search_mode="fast", pose_output="none"
+            )
+            with self.assertRaisesRegex(Exception, "expected 8"):
+                _merge_regular_docking_shards(
+                    args,
+                    job,
+                    shard_dirs,
+                    ["0", "1"],
+                    1.0,
+                    {"valid": 8},
+                    logical_shards=4,
+                )
+
+    def test_completed_regular_results_are_rechecked_for_exact_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            validated = root / "validated.csv"
+            validated.write_text(
+                "source_row,smiles\n1,CC\n2,CCC\n3,CCCC\n", encoding="utf-8"
+            )
+            results = root / "results.csv"
+            results.write_text(
+                "source_row,status\n1,success\n3,success\n", encoding="utf-8"
+            )
+            self.assertFalse(_regular_results_cover_validated(results, validated))
+            results.write_text(
+                "source_row,status\n1,success\n2,failed\n3,success\n",
+                encoding="utf-8",
+            )
+            self.assertTrue(_regular_results_cover_validated(results, validated))
+
+
+class HardwareVisibilityTests(unittest.TestCase):
+    def test_explicit_disable_masks_never_fall_back_to_physical_inventory(self) -> None:
+        for value in ("", "-1", "NoDevFiles", "void"):
+            with self.subTest(value=value), mock.patch.dict(
+                "os.environ", {"CUDA_VISIBLE_DEVICES": value}, clear=False
+            ), mock.patch("igenvs_ultra.workflow.subprocess.run") as discovery:
+                self.assertEqual(visible_gpu_tokens(), [])
+                discovery.assert_not_called()
+            with self.subTest(explicit=value), mock.patch(
+                "igenvs_ultra.workflow.subprocess.run"
+            ) as discovery:
+                self.assertEqual(visible_gpu_tokens(value), [])
+                discovery.assert_not_called()
+
+    def test_memory_detection_honors_the_cgroup_limit(self) -> None:
+        original = Path.read_text
+
+        def fake_read_text(path, *args, **kwargs):
+            values = {
+                "/proc/meminfo": "MemAvailable:       8388608 kB\n",
+                "/proc/self/cgroup": "0::/test.slice\n",
+                "/sys/fs/cgroup/test.slice/memory.max": str(2 * 1024**3),
+                "/sys/fs/cgroup/test.slice/memory.current": str(1024**3),
+            }
+            if str(path) in values:
+                return values[str(path)]
+            return original(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "read_text", fake_read_text):
+            self.assertEqual(available_memory_bytes(), 1024**3)
+
+    def test_small_memory_budget_can_select_less_than_ten_thousand_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, mock.patch(
+            "igenvs_ultra.workflow.available_memory_bytes", return_value=16 * 1024**2
+        ), mock.patch("igenvs_ultra.workflow.gpu_memory_mib", return_value=[]):
+            selected, decision = choose_stream_batch_size(Path(temporary), "auto")
+        self.assertLess(selected, 10_000)
+        self.assertEqual(selected, decision["constraints"]["host_memory_bound_rows"])
 
 
 class ScoreShardTests(unittest.TestCase):
@@ -528,6 +745,68 @@ class GenerationShardTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "some selected GPUs would be idle"):
             generation_logical_shard_count(invalid, ["0", "1", "2", "3"])
 
+    def test_persistent_resume_keeps_logical_shards_on_original_lanes(self) -> None:
+        class FixturePool:
+            def __init__(self):
+                self.calls = []
+
+            def run_wave(self, requests, lane_indices=None):
+                lanes = list(lane_indices or [])
+                self.calls.append(lanes)
+                results = []
+                for request, lane in zip(requests, lanes):
+                    Path(request["output"]).write_text(
+                        f"lane-{lane}\n", encoding="utf-8"
+                    )
+                    results.append({"generated": 1, "seconds": 0.01})
+                return results
+
+        with tempfile.TemporaryDirectory() as temporary:
+            screen = Path(temporary)
+            completed = screen / "batches/batch-000001/generation-shards/shard-0000"
+            completed.mkdir(parents=True)
+            completed_output = completed / "generated.smi"
+            completed_output.write_text("completed-lane-0\n", encoding="utf-8")
+            (completed / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "logical_shard": 0,
+                        "requested": 1,
+                        "seed": 13,
+                        "produced": 1,
+                        "output": str(completed_output),
+                        "sha256": sha256(completed_output),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                gpu_ids="0,1",
+                screen_gpus="auto",
+                encoder_device="auto",
+                generation_logical_shards=4,
+                generator_seed=13,
+                seed_file=None,
+                model_dir=None,
+                generator_metrics=False,
+            )
+            pool = FixturePool()
+            _, record = generate_batch(
+                argparse.Namespace(execution="docker"),
+                args,
+                screen,
+                1,
+                4,
+                pool,
+            )
+
+        self.assertEqual(pool.calls, [[1], [0, 1]])
+        self.assertEqual(
+            [item["gpu"] for item in record["shards"] if item["logical_shard"] > 0],
+            ["1", "0", "1"],
+        )
+
     def test_persistent_generated_screen_prefetches_during_scoring(self) -> None:
         generation_started = threading.Event()
         score_started = threading.Event()
@@ -572,13 +851,111 @@ class GenerationShardTests(unittest.TestCase):
                     mock.sentinel.connection,
                     2,
                     root / "models.json",
-                    set(),
                     mock.sentinel.generation_pool,
                     mock.sentinel.score_pool,
                 )
         self.assertEqual(len(records), 2)
         self.assertTrue(records[0]["prefetched_next_generation"])
         self.assertFalse(records[1]["prefetched_next_generation"])
+
+    def test_generated_admission_overlaps_scoring_without_changing_counts(self) -> None:
+        score_started = threading.Event()
+        next_admitted = threading.Event()
+        requests = []
+        molecules = iter(["CC", "CCC", "CCCC", "CCCCC", "CCCCCC"])
+        real_admit = admit_batch
+
+        def generate(_runtime, _args, screen, batch, requested, _pool):
+            requests.append(requested)
+            raw = screen / f"generated-{batch}.smi"
+            raw.write_text("".join(next(molecules) + "\n" for _ in range(requested)))
+            return raw, {"produced": requested}
+
+        def admit(*args):
+            batch = args[2]
+            if batch == 2:
+                self.assertTrue(score_started.wait(timeout=2))
+            result = real_admit(*args)
+            if batch == 2:
+                next_admitted.set()
+            return result
+
+        def score(_runtime, _args, _job, _assets, _screen, batch, admission, *_rest):
+            if batch == 1:
+                score_started.set()
+                self.assertTrue(next_admitted.wait(timeout=2))
+            return {"encoded_rows": admission["accepted_rows"] - int(batch == 1)}
+
+        args = argparse.Namespace(generate_count=4, max_stream_batches=None, fragment_policy="reject")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            connection = open_dedup_database(root)
+            try:
+                with mock.patch("igenvs_ultra.workflow.generate_batch", side_effect=generate), mock.patch(
+                    "igenvs_ultra.workflow.admit_batch", side_effect=admit,
+                ), mock.patch("igenvs_ultra.workflow.score_batch", side_effect=score):
+                    records = process_generated_screen(
+                        mock.sentinel.runtime, args, root, root, root, connection, 2,
+                        root / "models.json", mock.sentinel.generation_pool, mock.sentinel.score_pool,
+                    )
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM smiles").fetchone()[0], 5)
+            finally:
+                connection.close()
+        self.assertEqual(requests, [2, 2, 1])
+        self.assertEqual(sum(row["score"]["encoded_rows"] for row in records), 4)
+        self.assertEqual([row["prefetched_next_admission"] for row in records], [True, True, False])
+
+    def test_external_admission_overlaps_prior_batch_scoring(self) -> None:
+        score_started = threading.Event()
+        second_admitted = threading.Event()
+
+        def admit(_connection, screen, batch, _rows, _kind, _offset):
+            if batch == 2:
+                self.assertTrue(score_started.wait(timeout=2))
+                second_admitted.set()
+            prepared = screen / f"prepared-{batch}.csv"
+            prepared.write_text("molecule_id,smiles\n", encoding="utf-8")
+            return {"accepted_rows": 1, "prepared": str(prepared)}
+
+        def score(_runtime, _args, _job, _assets, _screen, batch, *_rest):
+            if batch == 1:
+                score_started.set()
+                self.assertTrue(second_admitted.wait(timeout=2))
+            return {"encoded_rows": 1}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            validated = root / "validated.csv"
+            validated.write_text(
+                "molecule_id,canonical_smiles\na,CC\nb,CCC\n", encoding="utf-8"
+            )
+            args = argparse.Namespace(
+                input=str(root / "source.csv"),
+                input_format="csv",
+                smiles_column="smiles",
+                id_column=None,
+                delimiter=",",
+            )
+            with mock.patch(
+                "igenvs_ultra.workflow.validate_library",
+                return_value={"validated": str(validated)},
+            ), mock.patch(
+                "igenvs_ultra.workflow.admit_batch", side_effect=admit
+            ), mock.patch(
+                "igenvs_ultra.workflow.score_batch", side_effect=score
+            ):
+                records = process_external_screen(
+                    mock.sentinel.runtime,
+                    args,
+                    root,
+                    root,
+                    root,
+                    mock.sentinel.connection,
+                    1,
+                    root / "model.json",
+                    mock.sentinel.score_pool,
+                )
+        self.assertEqual([item["batch"] for item in records], [1, 2])
 
 
 if __name__ == "__main__":

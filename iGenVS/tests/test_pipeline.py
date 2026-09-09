@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from igenvs.pipeline import _first_preparation_batch_size, _preparation_batches
+import pytest
+
+from igenvs.errors import ExternalToolError
+from igenvs.pipeline import (
+    _first_preparation_batch_size,
+    _preparation_batches,
+    _require_successful_docking,
+)
 from igenvs.records import ValidatedRecord
 
 
@@ -64,3 +71,14 @@ def test_small_or_autodock_job_avoids_extra_ramp_invocation() -> None:
         )
         == 32_768
     )
+
+
+def test_total_docking_engine_failure_is_not_success() -> None:
+    with pytest.raises(ExternalToolError, match="zero successful ligands"):
+        _require_successful_docking({"prepared": 3, "docked": 0})
+    with pytest.raises(ExternalToolError, match="zero successful ligands"):
+        _require_successful_docking(
+            {"prepared": 0, "preparation_failed": 3, "docked": 0}
+        )
+    _require_successful_docking({"prepared": 3, "docked": 1})
+    _require_successful_docking({"prepared": 0, "docked": 0})

@@ -373,6 +373,17 @@ def predict_loaded_members(
     device: torch.device,
 ) -> tuple[np.ndarray, list[dict[str, Any]], float]:
     """Score with a resident ensemble while preserving the released math."""
+    if len(matrix) == 0:
+        records = [
+            {
+                "seed": int(member["seed"]),
+                "checkpoint": member["checkpoint"],
+                "checkpoint_sha256": member["checkpoint_sha256"],
+                "inference_seconds": 0.0,
+            }
+            for member, _ in loaded
+        ]
+        return np.empty((len(loaded), 0), dtype=np.float32), records, 0.0
     probabilities = []
     records = []
     total_seconds = 0.0
@@ -1306,68 +1317,69 @@ def encode_ephemeral(
             temporary_executor.shutdown(wait=True, cancel_futures=True)
     os.replace(rejection_temporary, rejection_path)
     policy_seconds = time.perf_counter() - policy_started
-    if not canonical_smiles:
-        if owns_resources:
-            close_encoder_resources(resources)
-        raise ModelOperationError("no screening molecule passed the gMol inference policy")
-
-    calibrate_encoder_batch(resources, args, canonical_smiles, atom_counts)
-    backend_info = resources["backend_info"]
-    encoding_started = time.perf_counter()
-    try:
-        while True:
-            try:
-                matrix = encoder.encode(canonical_smiles, atom_counts=atom_counts)
-                break
-            except RuntimeError as exc:
-                message = str(exc).lower()
-                recoverable = any(
-                    marker in message
-                    for marker in (
-                        "out of memory",
-                        "failed to allocate",
-                        "cublas_status_alloc_failed",
-                        "launch out of resources",
+    if canonical_smiles:
+        calibrate_encoder_batch(resources, args, canonical_smiles, atom_counts)
+        backend_info = resources["backend_info"]
+        encoding_started = time.perf_counter()
+        try:
+            while True:
+                try:
+                    matrix = encoder.encode(canonical_smiles, atom_counts=atom_counts)
+                    break
+                except RuntimeError as exc:
+                    message = str(exc).lower()
+                    recoverable = any(
+                        marker in message
+                        for marker in (
+                            "out of memory",
+                            "failed to allocate",
+                            "cublas_status_alloc_failed",
+                            "launch out of resources",
+                        )
                     )
-                )
-                selected_batch = int(resources["selected_batch_size"])
-                smaller = [
-                    candidate
-                    for candidate in (64, 128, 192, 256, 512)
-                    if candidate < selected_batch
-                ]
-                if (
-                    str(getattr(args, "encoder_batch_size", "auto")).lower()
-                    != "auto"
-                    or not recoverable
-                    or not smaller
-                ):
-                    raise
-                replacement = max(smaller)
-                if device.type == "cuda":
-                    torch.cuda.empty_cache()
-                encoder.batch_size = replacement
-                resources["selected_batch_size"] = replacement
-                resources["backend_info"]["batch_size"] = replacement
-                calibration = resources["calibration"]
-                fallbacks = list(calibration.get("runtime_fallbacks", []))
-                fallbacks.append(
-                    {
-                        "from_batch_size": selected_batch,
-                        "to_batch_size": replacement,
-                        "error": str(exc).splitlines()[0],
+                    selected_batch = int(resources["selected_batch_size"])
+                    smaller = [
+                        candidate
+                        for candidate in (64, 128, 192, 256, 512)
+                        if candidate < selected_batch
+                    ]
+                    if (
+                        str(getattr(args, "encoder_batch_size", "auto")).lower()
+                        != "auto"
+                        or not recoverable
+                        or not smaller
+                    ):
+                        raise
+                    replacement = max(smaller)
+                    if device.type == "cuda":
+                        torch.cuda.empty_cache()
+                    encoder.batch_size = replacement
+                    resources["selected_batch_size"] = replacement
+                    resources["backend_info"]["batch_size"] = replacement
+                    calibration = resources["calibration"]
+                    fallbacks = list(calibration.get("runtime_fallbacks", []))
+                    fallbacks.append(
+                        {
+                            "from_batch_size": selected_batch,
+                            "to_batch_size": replacement,
+                            "error": str(exc).splitlines()[0],
+                        }
+                    )
+                    resources["calibration"] = {
+                        **calibration,
+                        "source": "runtime_capacity_fallback",
+                        "selected_batch_size": replacement,
+                        "runtime_fallbacks": fallbacks,
                     }
-                )
-                resources["calibration"] = {
-                    **calibration,
-                    "source": "runtime_capacity_fallback",
-                    "selected_batch_size": replacement,
-                    "runtime_fallbacks": fallbacks,
-                }
-    finally:
+        finally:
+            if owns_resources:
+                close_encoder_resources(resources)
+        encoding_seconds = time.perf_counter() - encoding_started
+    else:
+        matrix = np.empty((0, EMBEDDING_DIMENSION), dtype=np.float32)
+        encoding_seconds = 0.0
         if owns_resources:
             close_encoder_resources(resources)
-    encoding_seconds = time.perf_counter() - encoding_started
     matrix = np.asarray(matrix, dtype=np.float32)
     if matrix.shape != (len(canonical_smiles), EMBEDDING_DIMENSION):
         raise ModelOperationError(f"encoder returned unexpected shape {matrix.shape}")

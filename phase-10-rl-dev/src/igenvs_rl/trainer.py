@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
 import random
 import shutil
 from collections import Counter
@@ -42,7 +43,6 @@ from .state import (
     JobConfig,
     append_csv,
     append_score_cache,
-    append_seen_smiles,
     load_score_cache,
     load_seen_smiles,
 )
@@ -67,6 +67,8 @@ SAMPLE_FIELDS = [
     "used_for_gradient",
     "error",
 ]
+
+SEQUENCE_MICROBATCH_MAX = 256
 
 
 def _seed_everything(seed: int) -> None:
@@ -95,8 +97,12 @@ def _read_reference(job_dir: Path) -> list[float] | None:
     path = job_dir / "reference" / "scores.json"
     if not path.is_file():
         return None
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return [float(value) for value in payload["scores"]]
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        scores = [float(value) for value in payload["scores"]]
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return None
+    return scores if scores and all(math.isfinite(value) for value in scores) else None
 
 
 def _ensure_reference(
@@ -110,6 +116,10 @@ def _ensure_reference(
         return existing
 
     reference_dir = job_dir / "reference"
+    if reference_dir.exists():
+        reference_dir.rename(
+            reference_dir.with_name(f"reference.incomplete-{time_ns()}")
+        )
     reference_dir.mkdir(parents=True, exist_ok=True)
     smiles_path = reference_dir / "base-isomeric.smi"
     stats = write_de_novo_file(
@@ -143,10 +153,7 @@ def _ensure_reference(
         "successful_dockings": len(scores),
         "scores": scores,
     }
-    (reference_dir / "scores.json").write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    _atomic_json(reference_dir / "scores.json", payload)
     print(
         f"[igenvs-rl] frozen reference: {len(scores)} scores, "
         f"median={median(scores):.3f}",
@@ -285,6 +292,10 @@ def _sample_and_score(
     reward_occurrence_cap: int | None = None,
     persist_score_cache: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[dict[str, Any]], dict[str, float]]:
+    if output_dir.exists():
+        output_dir.rename(
+            output_dir.with_name(f"{output_dir.name}.incomplete-{time_ns()}")
+        )
     output_dir.mkdir(parents=True, exist_ok=False)
     tokens, raw_smiles = sample_policy(
         bundle,
@@ -548,6 +559,245 @@ def _cpu_state_dict(model: torch.nn.Module) -> dict[str, torch.Tensor]:
     return {key: value.detach().cpu() for key, value in model.state_dict().items()}
 
 
+def _backward_sequence_objective(
+    bundle: PolicyBundle,
+    tokens: torch.Tensor,
+    advantages: torch.Tensor,
+    gradient_mask: torch.Tensor,
+    *,
+    kl_beta: float,
+    temperature: float,
+    top_k: int | None,
+    microbatch_size: int,
+) -> dict[str, float | int]:
+    """Backpropagate the unchanged full-batch mean objective in slices."""
+
+    batch_size = len(tokens)
+    gradient_count = int(gradient_mask.sum().item())
+    if batch_size <= 0 or gradient_count <= 0 or microbatch_size <= 0:
+        raise ValueError("sequence objective requires non-empty positive dimensions")
+    policy_loss = 0.0
+    kl = 0.0
+    entropy = 0.0
+    for begin in range(0, batch_size, microbatch_size):
+        stop = min(batch_size, begin + microbatch_size)
+        local_mask = gradient_mask[begin:stop]
+        statistics = sequence_statistics(
+            bundle.policy,
+            bundle.prior,
+            tokens[begin:stop],
+            eos_idx=bundle.vocab.eos_idx,
+            temperature=temperature,
+            top_k=top_k,
+        )
+        if bool(local_mask.any()):
+            policy_piece = -(
+                advantages[begin:stop][local_mask]
+                * statistics.sequence_log_probability[local_mask]
+            ).sum() / gradient_count
+        else:
+            policy_piece = statistics.sequence_log_probability.sum() * 0.0
+        kl_piece = statistics.kl_per_token.sum() / batch_size
+        loss_piece = policy_piece + kl_beta * kl_piece
+        if not bool(torch.isfinite(loss_piece)):
+            raise RuntimeError("non-finite microbatched sequence objective")
+        loss_piece.backward()
+        policy_loss += float(policy_piece.detach().cpu())
+        kl += float(kl_piece.detach().cpu())
+        entropy += float(statistics.entropy_per_token.detach().sum().cpu()) / batch_size
+    return {
+        "loss": policy_loss + kl_beta * kl,
+        "policy_loss": policy_loss,
+        "kl_per_token": kl,
+        "entropy_per_token": entropy,
+        "microbatch_size": microbatch_size,
+    }
+
+
+def _backward_sequence_objective_adaptive(
+    bundle: PolicyBundle,
+    tokens: torch.Tensor,
+    advantages: torch.Tensor,
+    gradient_mask: torch.Tensor,
+    *,
+    kl_beta: float,
+    temperature: float,
+    top_k: int | None,
+) -> dict[str, float | int]:
+    microbatch_size = min(SEQUENCE_MICROBATCH_MAX, len(tokens))
+    while True:
+        bundle.policy.zero_grad(set_to_none=True)
+        try:
+            return _backward_sequence_objective(
+                bundle,
+                tokens,
+                advantages,
+                gradient_mask,
+                kl_beta=kl_beta,
+                temperature=temperature,
+                top_k=top_k,
+                microbatch_size=microbatch_size,
+            )
+        except RuntimeError as exc:
+            recoverable = any(
+                marker in str(exc).lower()
+                for marker in (
+                    "out of memory",
+                    "failed to allocate",
+                    "cublas_status_alloc_failed",
+                    "launch out of resources",
+                )
+            )
+            if not recoverable or microbatch_size <= 1:
+                raise
+            bundle.policy.zero_grad(set_to_none=True)
+            if bundle.device.type == "cuda":
+                torch.cuda.empty_cache()
+            microbatch_size = max(1, microbatch_size // 2)
+            print(
+                f"[igenvs-rl] retrying sequence objective with microbatch "
+                f"{microbatch_size}",
+                flush=True,
+            )
+
+
+def _atomic_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+        json.dump(value, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    temporary.replace(path)
+
+
+def _atomic_copy(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    shutil.copy2(source, temporary)
+    temporary.replace(destination)
+
+
+def _atomic_csv_rows(
+    path: Path,
+    rows: list[dict[str, Any]],
+    fields: list[str],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+        handle.flush()
+        os.fsync(handle.fileno())
+    temporary.replace(path)
+
+
+def _update_number(path: Path) -> int | None:
+    value = path.name.removeprefix("update-")
+    return int(value) if value.isdigit() else None
+
+
+def _reconcile_completed_state(job_dir: Path, checkpoint_update: int) -> None:
+    """Derive lightweight state only from checkpoint-authorized updates."""
+
+    history_path = job_dir / "history.csv"
+    history_fields: list[str] = []
+    histories: dict[int, dict[str, Any]] = {}
+    if history_path.is_file():
+        with history_path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            history_fields = list(reader.fieldnames or [])
+            for row in reader:
+                try:
+                    update = int(row["update"])
+                except (KeyError, TypeError, ValueError):
+                    # A legacy append may have been interrupted mid-row.
+                    # Durable completions below still have to cover every
+                    # checkpoint-authorized update; no history is invented.
+                    continue
+                if 0 < update <= checkpoint_update and None not in row and None not in row.values():
+                    histories[update] = dict(row)
+    updates_root = job_dir / "updates"
+    successful: set[str] = set()
+    sampled_updates: set[int] = set()
+    if updates_root.is_dir():
+        for update_dir in sorted(updates_root.glob("update-*")):
+            update = _update_number(update_dir)
+            if update is None or update > checkpoint_update:
+                continue
+            completion_path = update_dir / "completion.json"
+            if completion_path.is_file():
+                completion = json.loads(completion_path.read_text(encoding="utf-8"))
+                histories[update] = dict(completion["history"])
+            samples_path = update_dir / "samples.csv"
+            if samples_path.is_file():
+                sampled_updates.add(update)
+                with samples_path.open("r", encoding="utf-8", newline="") as handle:
+                    for row in csv.DictReader(handle):
+                        if row.get("docking_status") == "success" and row.get(
+                            "canonical_smiles"
+                        ):
+                            successful.add(row["canonical_smiles"])
+    if checkpoint_update and set(histories) != set(range(1, checkpoint_update + 1)):
+        missing = sorted(set(range(1, checkpoint_update + 1)).difference(histories))
+        raise RuntimeError(
+            f"checkpoint update {checkpoint_update} lacks durable history for updates {missing}"
+        )
+    if checkpoint_update and sampled_updates != set(range(1, checkpoint_update + 1)):
+        missing = sorted(set(range(1, checkpoint_update + 1)).difference(sampled_updates))
+        raise RuntimeError(
+            f"checkpoint update {checkpoint_update} lacks sample records for updates {missing}"
+        )
+    ordered_histories = [histories[index] for index in sorted(histories)]
+    for row in ordered_histories:
+        for field in row:
+            if field not in history_fields:
+                history_fields.append(field)
+    if ordered_histories:
+        _atomic_csv_rows(history_path, ordered_histories, history_fields)
+    elif history_path.exists():
+        history_path.unlink()
+
+    seen_path = job_dir / "seen.smi"
+    seen_tmp = seen_path.with_suffix(".smi.tmp")
+    with seen_tmp.open("w", encoding="utf-8", newline="\n") as handle:
+        for value in sorted(successful):
+            handle.write(value + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    seen_tmp.replace(seen_path)
+
+    evaluations_path = job_dir / "evaluations.csv"
+    if evaluations_path.is_file():
+        with evaluations_path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            evaluation_fields = list(reader.fieldnames or [])
+            evaluations = []
+            for row in reader:
+                if None in row or None in row.values():
+                    continue
+                label = row.get("label", "")
+                suffix = label.removeprefix("update-")
+                if not suffix.isdigit() or int(suffix) <= checkpoint_update:
+                    evaluations.append(dict(row))
+        _atomic_csv_rows(evaluations_path, evaluations, evaluation_fields)
+
+
+def _publish_progress(job_dir: Path, update: int, *, model_latest_exported: bool) -> None:
+    _atomic_json(
+        job_dir / "progress.json",
+        {
+            "schema_version": 1,
+            "status": "complete",
+            "completed_updates": update,
+            "model_latest_exported": model_latest_exported,
+        },
+    )
+
+
 def _save_checkpoint(
     path: Path,
     *,
@@ -571,7 +821,10 @@ def _save_checkpoint(
         payload["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    torch.save(payload, temporary)
+    with temporary.open("wb") as handle:
+        torch.save(payload, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
     temporary.replace(path)
 
 
@@ -611,10 +864,51 @@ def _export_i_gen3_model(
     *,
     directory: str = "model",
 ) -> None:
+    _export_policy_state(job_dir, config, bundle.spec, _cpu_state_dict(bundle.policy), directory)
+
+
+def _export_policy_state(job_dir, config, spec, policy_state, directory: str) -> None:
+    """Publish a checkpoint's weights without constructing models or using RNG."""
     destination = job_dir / directory / config.model_id.replace("-", "_")
     destination.mkdir(parents=True, exist_ok=True)
-    torch.save(_cpu_state_dict(bundle.policy), destination / bundle.spec.weights_name)
-    shutil.copy2(bundle.spec.vocab_path(Path(config.model_root)), destination / bundle.spec.vocab_name)
+    weights = destination / spec.weights_name
+    weights_temporary = weights.with_suffix(weights.suffix + ".tmp")
+    with weights_temporary.open("wb") as handle:
+        torch.save(policy_state, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
+    weights_temporary.replace(weights)
+    _atomic_copy(
+        spec.vocab_path(Path(config.model_root)),
+        destination / spec.vocab_name,
+    )
+
+
+def recover_job(job_dir: Path, config: JobConfig) -> int:
+    """Reconcile checkpoint-authorized state without sampling or training."""
+    job_dir = job_dir.resolve()
+    latest_path = job_dir / "checkpoints/latest.pt"
+    checkpoint = _load_checkpoint(latest_path)
+    update = int(checkpoint["update"]) if checkpoint else 0
+    _reconcile_completed_state(job_dir, update)
+    # Invalidate any previous export claim before the multi-file repair.
+    _publish_progress(job_dir, update, model_latest_exported=False)
+    if checkpoint is not None:
+        completion_path = job_dir / "updates" / f"update-{update:04d}" / "completion.json"
+        if completion_path.is_file():
+            completion = json.loads(completion_path.read_text(encoding="utf-8"))
+            if completion.get("promote_best"):
+                _atomic_copy(latest_path, job_dir / "checkpoints/best.pt")
+        spec = resolve_model(config.model_id)
+        _export_policy_state(job_dir, config, spec, checkpoint["policy_state"], "model-latest")
+        del checkpoint
+        best = _load_checkpoint(job_dir / "checkpoints/best.pt")
+        if best is not None:
+            if int(best["update"]) > update:
+                raise RuntimeError("best checkpoint is ahead of the authoritative latest checkpoint")
+            _export_policy_state(job_dir, config, spec, best["policy_state"], "model")
+        _publish_progress(job_dir, update, model_latest_exported=True)
+    return update
 
 
 def _evaluate(
@@ -657,9 +951,19 @@ def _evaluate(
     return metrics
 
 
-def train_job(job_dir: Path, config: JobConfig, *, updates: int) -> None:
-    if updates <= 0:
+def train_job(
+    job_dir: Path,
+    config: JobConfig,
+    *,
+    updates: int | None = None,
+    target_update: int | None = None,
+) -> None:
+    if (updates is None) == (target_update is None):
+        raise ValueError("provide exactly one of updates or target_update")
+    if updates is not None and updates <= 0:
         raise ValueError("updates must be positive")
+    if target_update is not None and target_update <= 0:
+        raise ValueError("target_update must be positive")
     job_dir = job_dir.resolve()
     latest_path = job_dir / "checkpoints" / "latest.pt"
     checkpoint = _load_checkpoint(latest_path)
@@ -698,10 +1002,45 @@ def train_job(job_dir: Path, config: JobConfig, *, updates: int) -> None:
     elif config.initial_model_root is not None:
         print(f"[igenvs-rl] warm-started policy from {config.initial_model_root}", flush=True)
 
+    stop_update = (
+        int(target_update)
+        if target_update is not None
+        else start_update + int(updates)
+    )
+    if stop_update < start_update:
+        raise ValueError(
+            f"checkpoint is already at update {start_update}, beyond target {stop_update}"
+        )
+    prior_progress = {}
+    progress_path = job_dir / "progress.json"
+    if progress_path.is_file():
+        prior_progress = json.loads(progress_path.read_text(encoding="utf-8"))
+    _reconcile_completed_state(job_dir, start_update)
+    prior_exported = bool(
+        prior_progress.get("completed_updates") == start_update
+        and prior_progress.get("model_latest_exported")
+    )
+    _publish_progress(
+        job_dir, start_update, model_latest_exported=prior_exported
+    )
+
+    if checkpoint and start_update > 0:
+        completion_path = job_dir / "updates" / f"update-{start_update:04d}" / "completion.json"
+        if completion_path.is_file():
+            completion = json.loads(completion_path.read_text(encoding="utf-8"))
+            if completion.get("promote_best"):
+                best_checkpoint = _load_checkpoint(job_dir / "checkpoints" / "best.pt")
+                if best_checkpoint is None or int(best_checkpoint["update"]) != start_update:
+                    _atomic_copy(latest_path, job_dir / "checkpoints" / "best.pt")
+                # The checkpoint and exported iGen3 files are separate atomic
+                # publications. Re-export even when best.pt already landed so
+                # a crash between those publications is fully recoverable.
+                _export_i_gen3_model(job_dir, config, bundle)
+
     seen = load_seen_smiles(job_dir)
     score_cache = load_score_cache(job_dir)
 
-    for update in range(start_update + 1, start_update + updates + 1):
+    for update in range(start_update + 1, stop_update + 1):
         started = perf_counter()
         update_dir = job_dir / "updates" / f"update-{update:04d}"
         tokens, rewards, gradient_mask, rows, metrics = _sample_and_score(
@@ -730,26 +1069,17 @@ def train_job(job_dir: Path, config: JobConfig, *, updates: int) -> None:
         if not bool(gradient_mask.any()):
             raise RuntimeError("no authoritative rewards were available for this update")
 
-        statistics = sequence_statistics(
-            bundle.policy,
-            bundle.prior,
+        advantages = normalized_advantages(rewards, gradient_mask)
+        optimizer.zero_grad(set_to_none=True)
+        objective = _backward_sequence_objective_adaptive(
+            bundle,
             tokens,
-            eos_idx=bundle.vocab.eos_idx,
+            advantages,
+            gradient_mask,
+            kl_beta=kl_beta,
             temperature=config.temperature,
             top_k=config.top_k or None,
         )
-        advantages = normalized_advantages(rewards, gradient_mask)
-        policy_loss = -(
-            advantages[gradient_mask]
-            * statistics.sequence_log_probability[gradient_mask]
-        ).mean()
-        kl = statistics.kl_per_token.mean()
-        loss = policy_loss + kl_beta * kl
-        if not bool(torch.isfinite(loss)):
-            raise RuntimeError(f"non-finite loss at update {update}")
-
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
         gradient_norm = torch.nn.utils.clip_grad_norm_(
             bundle.policy.parameters(),
             config.max_grad_norm,
@@ -765,9 +1095,7 @@ def train_job(job_dir: Path, config: JobConfig, *, updates: int) -> None:
             for row in rows
             if row["docking_status"] == "success"
         }
-        append_seen_smiles(job_dir, sorted(successful - seen))
-        seen.update(successful)
-        measured_kl = float(kl.detach().cpu())
+        measured_kl = float(objective["kl_per_token"])
         if measured_kl > config.target_kl:
             kl_beta = min(1.0, kl_beta * 1.5)
 
@@ -814,13 +1142,15 @@ def train_job(job_dir: Path, config: JobConfig, *, updates: int) -> None:
             )
         else:
             selection_reward = selection_metrics["reward_mean"]
+        promote_best = math.isfinite(selection_reward) and selection_reward > best_reward
         history_row = {
             "update": update,
             **metrics,
-            "loss": float(loss.detach().cpu()),
-            "policy_loss": float(policy_loss.detach().cpu()),
+            "loss": float(objective["loss"]),
+            "policy_loss": float(objective["policy_loss"]),
             "kl_per_token": measured_kl,
-            "entropy_per_token": float(statistics.entropy_per_token.mean().detach().cpu()),
+            "entropy_per_token": float(objective["entropy_per_token"]),
+            "sequence_microbatch_size": int(objective["microbatch_size"]),
             "gradient_norm": float(gradient_norm.detach().cpu()),
             "kl_beta": kl_beta,
             "evaluation_reward_mean": evaluation_reward,
@@ -828,7 +1158,17 @@ def train_job(job_dir: Path, config: JobConfig, *, updates: int) -> None:
             "evaluation_qualified_elite_fraction": evaluation_qualified_elite_fraction,
             "seconds": perf_counter() - started,
         }
-        append_csv(job_dir / "history.csv", history_row)
+        _atomic_json(
+            update_dir / "completion.json",
+            {
+                "schema_version": 1,
+                "status": "ready_for_checkpoint",
+                "update": update,
+                "history": history_row,
+                "successful_smiles": sorted(successful),
+                "promote_best": promote_best,
+            },
+        )
         _save_checkpoint(
             latest_path,
             bundle=bundle,
@@ -837,9 +1177,12 @@ def train_job(job_dir: Path, config: JobConfig, *, updates: int) -> None:
             kl_beta=kl_beta,
             best_reward=max(best_reward, selection_reward),
         )
-        if math.isfinite(selection_reward) and selection_reward > best_reward:
+        _reconcile_completed_state(job_dir, update)
+        _publish_progress(job_dir, update, model_latest_exported=False)
+        seen.update(successful)
+        if promote_best:
             best_reward = selection_reward
-            shutil.copy2(latest_path, job_dir / "checkpoints" / "best.pt")
+            _atomic_copy(latest_path, job_dir / "checkpoints" / "best.pt")
             _export_i_gen3_model(job_dir, config, bundle)
 
         tail_summary = ""
@@ -863,6 +1206,7 @@ def train_job(job_dir: Path, config: JobConfig, *, updates: int) -> None:
     # updates. Keep that hand-off separate from ``model/``, which remains the
     # best checkpoint selected by fresh evaluation.
     _export_i_gen3_model(job_dir, config, bundle, directory="model-latest")
+    _publish_progress(job_dir, stop_update, model_latest_exported=True)
 
 
 def evaluate_job(

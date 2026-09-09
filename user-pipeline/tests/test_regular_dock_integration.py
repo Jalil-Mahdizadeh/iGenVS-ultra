@@ -17,7 +17,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 class RegularDockIntegrationTests(unittest.TestCase):
     def test_native_igenvs_outputs_and_resume(self) -> None:
         parser = build_parser()
-        with tempfile.TemporaryDirectory(dir=str(PROJECT)) as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "tiny.csv"
             with source.open("w", encoding="utf-8", newline="") as handle:
@@ -47,7 +47,12 @@ class RegularDockIntegrationTests(unittest.TestCase):
             first_mtime = (job / "docking/results.csv").stat().st_mtime_ns
             second = regular_dock(args)
             self.assertEqual(first["counts"]["docked"], 2)
-            self.assertEqual(first, second)
+            # A resume measures fresh wrapper wall time; scientific results and
+            # persisted engine artifacts must stay identical.
+            self.assertEqual(
+                {key: value for key, value in first.items() if key != "timings"},
+                {key: value for key, value in second.items() if key != "timings"},
+            )
             self.assertEqual((job / "docking/results.csv").stat().st_mtime_ns, first_mtime)
             self.assertTrue((job / "docking/manifest.json").is_file())
             self.assertFalse((job / "models").exists())

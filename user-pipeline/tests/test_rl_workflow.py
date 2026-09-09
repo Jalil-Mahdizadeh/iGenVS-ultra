@@ -13,8 +13,10 @@ from unittest import mock
 from igenvs_ultra.cli import build_parser, validate_args
 from igenvs_ultra.rl_workflow import (
     FROZEN_PROTOCOL_SHA256,
+    _completed_updates,
     _gate_check,
     _publish_model,
+    _runtime_command,
     _verify_stage_config,
     frozen_rl_bundle,
     generate_rl,
@@ -27,6 +29,28 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class RlCliTests(unittest.TestCase):
+    def test_runtime_command_forwards_the_requested_action(self) -> None:
+        command = _runtime_command(PROJECT, "init", "--job-dir", "/tmp/job")
+        self.assertEqual(command[-3:], ["init", "--job-dir", "/tmp/job"])
+
+    def test_checkpoint_progress_is_authoritative_over_history(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary)
+            (stage / "history.csv").write_text(
+                "update,loss\n1,0.1\n2,0.2\n", encoding="utf-8"
+            )
+            (stage / "progress.json").write_text(
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "completed_updates": 1,
+                        "model_latest_exported": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(_completed_updates(stage), 1)
+
     def test_rl_commands_are_explicit_and_keep_protocol_fixed(self) -> None:
         parser = build_parser()
         train = parser.parse_args(

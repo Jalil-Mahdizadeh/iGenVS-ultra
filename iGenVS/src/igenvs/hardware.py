@@ -63,23 +63,48 @@ def available_memory_bytes() -> int:
     except (OSError, ValueError, IndexError):
         pass
 
-    cgroup_available = 0
+    # A child may say "max" (or have a looser limit) while a parent limits
+    # the entire job. Include every visible ancestor and its sibling usage.
+    headrooms = []
     try:
-        relative = next(
-            line.split("::", 1)[1]
-            for line in Path("/proc/self/cgroup").read_text(encoding="utf-8").splitlines()
-            if "::" in line
-        )
-        root = Path("/sys/fs/cgroup") / relative.lstrip("/")
-        raw_limit = (root / "memory.max").read_text(encoding="utf-8").strip()
-        if raw_limit != "max":
-            limit = int(raw_limit)
-            current = int((root / "memory.current").read_text(encoding="utf-8").strip())
-            cgroup_available = max(0, limit - current)
-    except (OSError, StopIteration, ValueError, IndexError):
-        pass
-    candidates = [value for value in (proc_available, cgroup_available) if value > 0]
-    return min(candidates) if candidates else 0
+        entries = Path("/proc/self/cgroup").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        entries = []
+    for entry in entries:
+        fields = entry.split(":", 2)
+        if len(fields) != 3:
+            continue
+        if fields[0] == "0" and not fields[1]:
+            base = Path("/sys/fs/cgroup")
+            limit_name, usage_name = "memory.max", "memory.current"
+        elif "memory" in fields[1].split(","):
+            base = Path("/sys/fs/cgroup/memory")
+            limit_name, usage_name = "memory.limit_in_bytes", "memory.usage_in_bytes"
+        else:
+            continue
+        relative = fields[2].lstrip("/")
+        # Namespace-relative paths can contain ".." for an inaccessible parent;
+        # never read outside the mounted controller. Still inspect its root.
+        leaf = base / relative if ".." not in Path(relative).parts else base
+        roots = [leaf]
+        while roots[-1] != base:
+            roots.append(roots[-1].parent)
+        for root in roots:
+            try:
+                raw_limit = (root / limit_name).read_text(encoding="utf-8").strip()
+                if raw_limit == "max":
+                    continue
+                limit = int(raw_limit)
+                if limit < 0 or limit >= 2**60:
+                    continue
+                current = int((root / usage_name).read_text(encoding="utf-8").strip())
+                headrooms.append(max(0, limit - current))
+            except (OSError, ValueError):
+                continue
+    if headrooms:
+        cgroup_available = min(headrooms)
+        return min(proc_available, cgroup_available) if proc_available > 0 else cgroup_available
+    return proc_available
 
 
 def auto_worker_count(requested: str | int, *, cap: int = 32) -> int:
@@ -109,10 +134,8 @@ def auto_preparation_worker_count(
     # when the allocation is large enough to do so.
     cpu_bound = max(1, physical - int(physical >= 8))
     memory = available_memory_bytes()
-    memory_bound = cap
-    if memory > 0:
-        usable = int(memory * 0.70)
-        memory_bound = max(1, usable // (memory_per_worker_mib * 1024 * 1024))
+    usable = int(memory * 0.70)
+    memory_bound = max(1, usable // (memory_per_worker_mib * 1024 * 1024))
     return max(1, min(cap, cpu_bound, memory_bound))
 
 
@@ -151,11 +174,15 @@ def query_gpus() -> list[GPUInfo]:
 
 
 def selected_gpu(device_id: int = 0) -> GPUInfo | None:
+    visible: str | None = None
+    if "CUDA_VISIBLE_DEVICES" in os.environ:
+        visible = os.environ["CUDA_VISIBLE_DEVICES"].strip()
+        if visible in {"", "-1", "NoDevFiles", "void"}:
+            return None
     gpus = query_gpus()
     if not gpus:
         return None
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
-    if visible and visible not in {"-1", "NoDevFiles"}:
+    if visible is not None:
         tokens = [token.strip() for token in visible.split(",") if token.strip()]
         if 0 <= device_id < len(tokens):
             token = tokens[device_id]
@@ -177,6 +204,7 @@ def selected_gpu(device_id: int = 0) -> GPUInfo | None:
                 )
                 if match is not None:
                     return match
+        return None
     if 0 <= device_id < len(gpus):
         return gpus[device_id]
     return gpus[0]

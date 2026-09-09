@@ -22,7 +22,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 )
 class TargetHeadTrainingIntegrationTests(unittest.TestCase):
     def test_three_seed_initial_fit_and_resume(self) -> None:
-        with tempfile.TemporaryDirectory(dir=str(PROJECT)) as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             job = Path(temporary)
             (job / "fit-config.json").write_text(
                 json.dumps(

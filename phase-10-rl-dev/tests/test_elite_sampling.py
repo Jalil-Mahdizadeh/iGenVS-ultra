@@ -89,6 +89,14 @@ def test_repeated_elite_occurrences_share_one_cached_docking(tmp_path, monkeypat
     assert metrics["elite_count"] == 2
     assert metrics["elite_unique_count"] == 1
 
+    # Retrying the same uncheckpointed update path archives partial artifacts
+    # and deterministically recreates the directory instead of failing.
+    trainer._sample_and_score(
+        **common,
+        output_dir=tmp_path / "first",
+    )
+    assert len(list(tmp_path.glob("first.incomplete-*"))) == 1
+
     _, _, _, rows, metrics = trainer._sample_and_score(
         **common,
         output_dir=tmp_path / "second",

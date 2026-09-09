@@ -43,7 +43,7 @@ def prepare_released_model_job(job: Path) -> None:
 @unittest.skipUnless(os.environ.get("IGENVS_ULTRA_INTEGRATION") == "1", "set IGENVS_ULTRA_INTEGRATION=1")
 class EndToEndScreenTests(unittest.TestCase):
     def test_external_library_default_drops_embeddings(self) -> None:
-        with tempfile.TemporaryDirectory(dir=str(PROJECT)) as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             job = Path(temporary)
             prepare_released_model_job(job)
             source = job / "tiny.smi"
@@ -107,7 +107,7 @@ class EndToEndScreenTests(unittest.TestCase):
             self.assertEqual(sha256(Path(result["results"])), result["results_sha256"])
 
     def test_generated_library_streams_over_multiple_batches(self) -> None:
-        with tempfile.TemporaryDirectory(dir=str(PROJECT)) as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             job = Path(temporary)
             prepare_released_model_job(job)
             args = argparse.Namespace(

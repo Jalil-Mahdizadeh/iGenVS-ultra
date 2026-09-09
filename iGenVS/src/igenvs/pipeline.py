@@ -19,7 +19,7 @@ from time import perf_counter
 from typing import Any, Iterator, Sequence
 
 from .docking import DockInvocation, DockingConfig, dock_batch_resilient
-from .errors import InputError
+from .errors import ExternalToolError, InputError
 from .generation import GenerationConfig, run_igen3
 from .hardware import (
     auto_preparation_worker_count,
@@ -67,6 +67,15 @@ RESULT_FIELDS = [
     "pose_ref",
     "error",
 ]
+
+
+def _require_successful_docking(counts: dict[str, int]) -> None:
+    processed = counts["prepared"] + counts.get("preparation_failed", 0)
+    if processed > 0 and counts["docked"] == 0:
+        raise ExternalToolError(
+            "docking produced zero successful ligands despite valid inputs; "
+            "inspect docking.stderr.log and the failed manifest"
+        )
 
 
 @dataclass(frozen=True)
@@ -796,11 +805,12 @@ def run_screen(config: ScreenConfig) -> dict[str, Any]:
                     current = following
 
         timings["screening_seconds"] = perf_counter() - screening_started
+        manifest["counts"] = counts
+        _require_successful_docking(counts)
         manifest["status"] = "complete"
         manifest["completed_at"] = _utc_now()
         elapsed_seconds = perf_counter() - started
         manifest["elapsed_seconds"] = elapsed_seconds
-        manifest["counts"] = counts
         manifest["performance"] = {
             "successful_ligands_per_second_end_to_end": counts["docked"] / max(elapsed_seconds, 1e-9),
             "successful_ligands_per_second_screening": counts["docked"]

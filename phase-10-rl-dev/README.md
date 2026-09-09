@@ -24,14 +24,34 @@ The accepted implementation is exposed to users by
 orchestrator verifies the frozen protocol and implementation hashes before it
 runs and does not expose scientific override flags.
 
+Operational implementation updates are recorded in `maintenance.json`, an
+explicit hash-checked overlay on the historical freeze. Neither `protocol.json`
+nor `freeze.json` is rewritten. Before a stopping decision, `recover --job-dir`
+repairs checkpoint-derived history/evaluations and selected/latest exports on
+CPU without generating molecules or training. Partial reference directories are
+retained before retry; reference score publication and stage copying are atomic.
+
+Training retains FP32 and the full effective batch. Backward is microbatched;
+sampling retries allocation failures with smaller cache/model chunks while
+preserving the released full-batch token-major RNG stream. Tests compare tokens,
+final RNG state, and gradients against the original full-batch operations.
+
 Run the focused tests:
 
 ```bash
-apptainer exec --bind "$PWD:$PWD" \
+apptainer exec --bind "$PWD:$PWD:ro" --pwd /tmp \
   --env "PYTHONPATH=$PWD/phase-10-rl-dev/src:$PWD/iGenVS/iGen3/src:$PWD/iGenVS/src" \
+  --env PYTHONDONTWRITEBYTECODE=1 \
   /nobackup/proj/disk/theo-storage/personal/jalil/iGenVS/containers/iGenVS.SIF \
-  python3 -m pytest -q phase-10-rl-dev/tests
+  python3 -m pytest -q -p no:cacheprovider "$PWD/phase-10-rl-dev/tests"
 ```
+
+Add `--nv --env IGENVS_RL_CUDA_TEST=1` to run the opt-in real-model 4,096-draw
+test with a 2 GiB PyTorch allocator limit. This tests allocation fallback on the
+available GPU, not the total memory requirements of an entire docking/RL job.
+Add `--env IGENVS_RL_REAL_MODEL_TEST=1` for the real-weight CLI recovery smoke
+test. Its tiny synthetic-oracle fixture is isolated from the frozen protocol;
+it verifies export repair and idempotent resume, not scientific acceptance.
 
 Launch one four-GPU node per development receptor:
 

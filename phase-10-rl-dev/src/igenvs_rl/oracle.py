@@ -34,8 +34,10 @@ def _write_input(path: Path, molecules: dict[str, str]) -> None:
 
 
 def _visible_gpu_tokens() -> list[str]:
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
-    if visible and visible not in {"-1", "NoDevFiles"}:
+    if "CUDA_VISIBLE_DEVICES" in os.environ:
+        visible = os.environ["CUDA_VISIBLE_DEVICES"].strip()
+        if visible in {"", "-1", "NoDevFiles", "void"}:
+            return []
         return [token.strip() for token in visible.split(",") if token.strip()]
     process = subprocess.run(
         ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader,nounits"],

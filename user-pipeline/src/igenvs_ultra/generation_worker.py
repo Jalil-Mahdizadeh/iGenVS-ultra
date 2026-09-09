@@ -18,6 +18,7 @@ import math
 import multiprocessing as mp
 import os
 from pathlib import Path
+import sqlite3
 import sys
 import time
 import traceback
@@ -502,6 +503,209 @@ class PersistentGenerator:
         self.seeds = [*args.seed_smiles, *_read_seed_file(args.seed_file)]
         if args.mode == "derivative" and not self.seeds:
             raise ValueError("derivative generation requires seed SMILES")
+        self.state: sqlite3.Connection | None = None
+        if args.mode == "de-novo" and args.state_file is not None:
+            self._open_state(args.state_file.resolve())
+
+    def _state_identity(self) -> str:
+        value = {
+            "schema_version": 1,
+            "model": self.spec.model_id,
+            "weights_sha256": _sha256(self.spec.weights_path(self.args.model_dir)),
+            "vocabulary_sha256": _sha256(self.spec.vocab_path(self.args.model_dir)),
+            "mode": self.args.mode,
+            "temperature": self.args.temperature,
+            "top_k": self.args.top_k,
+            "greedy": bool(self.args.greedy),
+            "dtype": str(self.generator.dtype),
+        }
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+    def _open_state(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.state = sqlite3.connect(str(path), timeout=60)
+        self.state.execute("PRAGMA journal_mode=WAL")
+        self.state.execute("PRAGMA synchronous=FULL")
+        self.state.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            ) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS seen (
+                value TEXT PRIMARY KEY
+            ) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS surplus (
+                position INTEGER PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS requests (
+                request_key TEXT PRIMARY KEY,
+                output_path TEXT NOT NULL,
+                output_sha256 TEXT NOT NULL,
+                result_json TEXT NOT NULL
+            ) WITHOUT ROWID;
+            """
+        )
+        self.state.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS request_seen "
+            "(value TEXT PRIMARY KEY) WITHOUT ROWID"
+        )
+        self.state.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS candidate_values "
+            "(value TEXT PRIMARY KEY, first_index INTEGER NOT NULL) WITHOUT ROWID"
+        )
+        identity = self._state_identity()
+        stored = self.state.execute(
+            "SELECT value FROM metadata WHERE key='identity'"
+        ).fetchone()
+        if stored is not None and stored[0] != identity:
+            raise ValueError(f"persistent generator state has incompatible settings: {path}")
+        self.state.execute(
+            "INSERT OR IGNORE INTO metadata(key, value) VALUES ('identity', ?)",
+            (identity,),
+        )
+        self.state.commit()
+        self._restore_state()
+
+    def _restore_state(self) -> None:
+        if self.state is None:
+            return
+        # SQLite remains the exact global identity authority. Only the bounded
+        # current candidate block and surplus queue live in Python memory.
+        self.seen.clear()
+        self.state.execute("DELETE FROM request_seen")
+        self.state.execute("DELETE FROM candidate_values")
+        self.surplus = deque(
+            str(row[0])
+            for row in self.state.execute("SELECT value FROM surplus ORDER BY position")
+        )
+        values = dict(
+            self.state.execute(
+                "SELECT key, value FROM metadata WHERE key IN "
+                "('total_candidates', 'total_emitted', 'batch_size')"
+            )
+        )
+        self.total_candidates = int(values.get("total_candidates", 0))
+        self.total_emitted = int(values.get("total_emitted", 0))
+        if "batch_size" in values:
+            self.batch_size = int(values["batch_size"])
+        self.state.commit()
+
+    @staticmethod
+    def _request_key(output: Path, count: int, seed: int) -> str:
+        encoded = json.dumps(
+            {"output": str(output), "count": count, "seed": seed},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _completed_request(self, key: str, output: Path) -> dict[str, Any] | None:
+        if self.state is None:
+            return None
+        conflict = self.state.execute(
+            "SELECT request_key FROM requests WHERE output_path=? AND request_key<>?",
+            (str(output), key),
+        ).fetchone()
+        if conflict is not None:
+            raise RuntimeError(
+                "persistent generation output was previously committed for a "
+                f"different request: {output}"
+            )
+        row = self.state.execute(
+            "SELECT output_path, output_sha256, result_json FROM requests "
+            "WHERE request_key=?",
+            (key,),
+        ).fetchone()
+        if row is None:
+            return None
+        if str(output) != row[0] or not output.is_file() or _sha256(output) != row[1]:
+            raise RuntimeError(
+                "a committed persistent generation output is missing or changed: "
+                f"{output}"
+            )
+        result = json.loads(row[2])
+        result["replayed_committed_request"] = True
+        return result
+
+    def _commit_state(
+        self,
+        key: str,
+        output: Path,
+        result: dict[str, Any],
+    ) -> None:
+        assert self.state is not None
+        self.state.execute(
+            "INSERT OR IGNORE INTO seen(value) SELECT value FROM request_seen"
+        )
+        self.state.execute("DELETE FROM surplus")
+        self.state.executemany(
+            "INSERT INTO surplus(position, value) VALUES (?, ?)",
+            enumerate(self.surplus),
+        )
+        self.state.executemany(
+            "INSERT OR REPLACE INTO metadata(key, value) VALUES (?, ?)",
+            (
+                ("total_candidates", str(self.total_candidates)),
+                ("total_emitted", str(self.total_emitted)),
+                ("batch_size", str(self.batch_size)),
+            ),
+        )
+        self.state.execute(
+            "INSERT INTO requests(request_key, output_path, output_sha256, result_json) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                key,
+                str(output),
+                _sha256(output),
+                json.dumps(result, sort_keys=True, allow_nan=False),
+            ),
+        )
+        self.state.commit()
+
+    def _new_canonical_values(self, values: list[str | None]) -> list[str]:
+        if self.state is None:
+            output = []
+            for canonical in values:
+                if canonical is None or canonical in self.seen:
+                    continue
+                self.seen.add(canonical)
+                output.append(canonical)
+            return output
+        self.state.execute("DELETE FROM candidate_values")
+        self.state.executemany(
+            "INSERT OR IGNORE INTO candidate_values(value, first_index) VALUES (?, ?)",
+            (
+                (canonical, index)
+                for index, canonical in enumerate(values)
+                if canonical is not None
+            ),
+        )
+        fresh = [
+            str(row[0])
+            for row in self.state.execute(
+                "SELECT candidate.value FROM candidate_values AS candidate "
+                "LEFT JOIN seen ON seen.value = candidate.value "
+                "LEFT JOIN request_seen ON request_seen.value = candidate.value "
+                "WHERE seen.value IS NULL AND request_seen.value IS NULL "
+                "ORDER BY candidate.first_index"
+            )
+        ]
+        self.state.executemany(
+            "INSERT INTO request_seen(value) VALUES (?)",
+            ((value,) for value in fresh),
+        )
+        return fresh
+
+    def _persistent_seen_count(self) -> int:
+        if self.state is None:
+            return len(self.seen)
+        row = self.state.execute(
+            "SELECT (SELECT COUNT(*) FROM seen) + "
+            "(SELECT COUNT(*) FROM request_seen)"
+        ).fetchone()
+        return int(row[0])
 
     def _de_novo(self, output: Path, count: int, seed: int) -> dict[str, Any]:
         torch.manual_seed(seed)
@@ -554,12 +758,10 @@ class PersistentGenerator:
                         continue
                     candidates += current
                     self.total_candidates += current
-                    for canonical in self.canonicalizer.canonicalize_tokens(
+                    canonical_values = self.canonicalizer.canonicalize_tokens(
                         self.generator, tokens
-                    ):
-                        if canonical is None or canonical in self.seen:
-                            continue
-                        self.seen.add(canonical)
+                    )
+                    for canonical in self._new_canonical_values(canonical_values):
                         self.surplus.append(canonical)
                         accepted_from_new_candidates += 1
                     del tokens
@@ -582,7 +784,7 @@ class PersistentGenerator:
             "candidate_smiles_per_second": candidates / max(elapsed, 1.0e-9),
             "batch_size": self.batch_size,
             "stopped_reason": "target",
-            "persistent_seen_rows": len(self.seen),
+            "persistent_seen_rows": self._persistent_seen_count(),
             "canonical_workers": self.canonicalizer.workers,
         }
 
@@ -624,22 +826,46 @@ class PersistentGenerator:
         seed = int(request["seed"])
         if count <= 0:
             raise ValueError("request count must be positive")
+        request_key = self._request_key(output, count, seed)
+        completed = self._completed_request(request_key, output)
+        if completed is not None:
+            return completed
+        if self.state is not None:
+            self.state.execute("BEGIN IMMEDIATE")
+            self.state.execute("DELETE FROM request_seen")
         if self.args.mode == "de-novo":
-            result = self._de_novo(output, count, seed)
+            try:
+                result = self._de_novo(output, count, seed)
+            except BaseException:
+                if self.state is not None:
+                    self.state.rollback()
+                    self._restore_state()
+                raise
         else:
             result = self._derivative(output, count, seed)
-        if request.get("metrics_dir"):
-            _, summary = save_metrics(
-                output,
-                model_id=self.spec.model_id,
-                isomeric_smiles=self.spec.is_isomeric,
-                output_dir=Path(request["metrics_dir"]).resolve(),
-            )
-            result["metrics"] = summary.to_dict(orient="records")
+        try:
+            if request.get("metrics_dir"):
+                _, summary = save_metrics(
+                    output,
+                    model_id=self.spec.model_id,
+                    isomeric_smiles=self.spec.is_isomeric,
+                    output_dir=Path(request["metrics_dir"]).resolve(),
+                )
+                result["metrics"] = summary.to_dict(orient="records")
+            if self.state is not None:
+                self._commit_state(request_key, output, result)
+        except BaseException:
+            if self.state is not None:
+                self.state.rollback()
+                self._restore_state()
+            raise
         return result
 
     def close(self) -> None:
         self.canonicalizer.close()
+        if self.state is not None:
+            self.state.close()
+            self.state = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -651,6 +877,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-batch-size", type=int, default=32_768)
     parser.add_argument("--expected-count", type=int, required=True)
     parser.add_argument("--profile-cache", type=Path)
+    parser.add_argument("--state-file", type=Path)
     parser.add_argument("--temperature", type=float)
     parser.add_argument("--top-k", type=int)
     parser.add_argument("--greedy", action="store_true")

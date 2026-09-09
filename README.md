@@ -9,6 +9,12 @@ iGenVS-ultra provides three GPU workflows behind one hardware-aware launcher:
 
 The public launcher detects the GPUs and available CPU/memory resources, then
 chooses its worker counts, batches, shards, and overlap policy automatically.
+
+Operational recovery and memory safeguards are documented in
+[the user-pipeline guide](user-pipeline/README.md#portability-and-operational-maintenance).
+Existing SIFs supply dependencies; the launcher runs the mounted, maintained
+iGenVS/iGen3 source, including docking failure checks. Scientific settings are
+unchanged; maintenance does not require rebuilding a SIF.
 Both application environments are reproducible Linux AMD64 Docker images.
 
 ## Requirements

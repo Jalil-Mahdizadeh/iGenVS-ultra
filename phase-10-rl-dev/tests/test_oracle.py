@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from igenvs_rl.oracle import FakeOracle, IGenVSOracle, stable_molecule_id
+from igenvs_rl import oracle
 
 
 def test_fake_oracle_is_deterministic(tmp_path) -> None:
@@ -37,3 +38,12 @@ def test_igenvs_oracle_command_accepts_effective_sparse_shard_count() -> None:
     )
     assert command[command.index("--num-shards") + 1] == "2"
     assert command[command.index("--shard-index") + 1] == "1"
+
+
+def test_oracle_honors_explicit_disable_masks(monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("disabled visibility must not discover physical GPUs")
+    monkeypatch.setattr(oracle.subprocess, "run", forbidden)
+    for mask in ("", "-1", "NoDevFiles", "void"):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+        assert oracle._visible_gpu_tokens() == []

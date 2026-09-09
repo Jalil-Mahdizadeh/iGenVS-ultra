@@ -46,12 +46,19 @@ def _sha256(path: Path) -> str:
 
 
 def _completed_updates(stage_dir: Path) -> int:
+    progress = stage_dir / "progress.json"
+    if progress.is_file():
+        payload = json.loads(progress.read_text(encoding="utf-8"))
+        if payload.get("status") == "complete":
+            return int(payload["completed_updates"])
     history = stage_dir / "history.csv"
     if not history.is_file():
         return 0
     with history.open("r", encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    return int(rows[-1]["update"]) if rows else 0
+        completed = 0
+        for row in csv.DictReader(handle):
+            completed = int(row["update"])
+    return completed
 
 
 def _update_loop_seconds(stage_dir: Path) -> float:
@@ -175,13 +182,24 @@ def _init_stage(
 def _copy_reference(source_stage: Path, destination_stage: Path) -> None:
     source = source_stage / "reference"
     destination = destination_stage / "reference"
+    if not (source / "scores.json").is_file():
+        raise RuntimeError(f"source reference is incomplete: {source}")
+    if destination.is_dir() and not (destination / "scores.json").is_file():
+        destination.rename(destination.with_name(f"reference.incomplete-{time.time_ns()}"))
     if destination.is_dir():
         if _sha256(source / "scores.json") != _sha256(destination / "scores.json"):
             raise RuntimeError("stage reference does not match the frozen target reference")
         return
     if not (source / "scores.json").is_file():
         raise RuntimeError(f"source reference is incomplete: {source}")
-    shutil.copytree(source, destination)
+    temporary = destination.with_name(f"reference.copying-{time.time_ns()}")
+    shutil.copytree(source, temporary)
+    temporary.rename(destination)
+
+
+def _recover_stage(wrapper: Path, stage_dir: Path) -> int:
+    subprocess.run([str(wrapper), "recover", "--job-dir", str(stage_dir)], check=True)
+    return _completed_updates(stage_dir)
 
 
 def _run_training_to(
@@ -193,20 +211,35 @@ def _run_training_to(
     timing_records: list[dict[str, Any]],
     gpus: int,
 ) -> None:
-    completed = _completed_updates(stage_dir)
-    if completed > requested_total:
+    completed = _recover_stage(wrapper, stage_dir)
+    progress_path = stage_dir / "progress.json"
+    if completed > requested_total and progress_path.is_file():
         raise RuntimeError(f"{stage_name} has {completed} updates, beyond requested {requested_total}")
-    remaining = requested_total - completed
-    if remaining == 0:
+    remaining = max(0, requested_total - completed)
+    progress = (
+        json.loads(progress_path.read_text(encoding="utf-8"))
+        if progress_path.is_file()
+        else {}
+    )
+    if remaining == 0 and progress.get("model_latest_exported"):
         print(f"[development] {stage_name}: already at update {completed}", flush=True)
         return
 
     started_at = _utc_now()
     started = time.perf_counter()
     subprocess.run(
-        [str(wrapper), "train", "--job-dir", str(stage_dir), "--updates", str(remaining)],
+        [
+            str(wrapper),
+            "train",
+            "--job-dir",
+            str(stage_dir),
+            "--target-update",
+            str(requested_total),
+        ],
         check=True,
     )
+    if _completed_updates(stage_dir) != requested_total:
+        raise RuntimeError(f"{stage_name} did not reach update {requested_total}")
     elapsed = time.perf_counter() - started
     timing_records.append(
         {
@@ -335,14 +368,19 @@ def _run_adaptive_stage(
     if int(stage["updates"]) != minimum or minimum <= 0 or block <= 0 or maximum < minimum:
         raise ValueError("invalid adaptive stopping schedule")
 
+    completed = _recover_stage(wrapper, stage_dir)
     stopping_path = stage_dir / "stopping.json"
     if stopping_path.is_file():
         stopping = json.loads(stopping_path.read_text(encoding="utf-8"))
-        if _completed_updates(stage_dir) != int(stopping["stopped_at_update"]):
-            raise RuntimeError("completed updates differ from the recorded stopping decision")
-        return stopping
+        if stopping.get("rule") != rule:
+            raise RuntimeError("recorded stopping rule differs from the frozen protocol")
+        stopped_at = int(stopping["stopped_at_update"])
+        if completed == stopped_at:
+            return stopping
+        if completed > stopped_at:
+            raise RuntimeError("completed updates exceed the recorded stopping decision")
+        stopping_path.rename(stopping_path.with_name(f"stopping.incomplete-{time.time_ns()}.json"))
 
-    completed = _completed_updates(stage_dir)
     if completed < minimum:
         target_update = minimum
     elif (completed - minimum) % block:

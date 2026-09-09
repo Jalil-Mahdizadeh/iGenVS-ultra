@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+import pytest
+from unittest.mock import Mock
 
 import igenvs.hardware as hardware
 
@@ -50,6 +53,38 @@ def test_visible_gpu_token_resolves_physical_inventory(monkeypatch) -> None:
     assert hardware.selected_gpu(0) == inventory[1]
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", inventory[0].uuid)
     assert hardware.selected_gpu(0) == inventory[0]
+
+
+def test_explicit_gpu_disable_mask_returns_no_device(monkeypatch) -> None:
+    discovery = Mock(return_value=[_gpu(10_000)])
+    monkeypatch.setattr(hardware, "query_gpus", discovery)
+    for value in ("", "-1", "NoDevFiles", "void"):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", value)
+        assert hardware.selected_gpu(0) is None
+    discovery.assert_not_called()
+
+
+@pytest.mark.parametrize("version", [1, 2])
+@pytest.mark.parametrize("parent_usage", [2**30, 2 * 2**30])
+def test_nested_parent_cgroup_limits_and_exhaustion(monkeypatch, version, parent_usage):
+    gib = 2**30
+    base = "/sys/fs/cgroup" if version == 2 else "/sys/fs/cgroup/memory"
+    limit = "memory.max" if version == 2 else "memory.limit_in_bytes"
+    usage = "memory.current" if version == 2 else "memory.usage_in_bytes"
+    values = {
+        "/proc/meminfo": f"MemAvailable: {8*gib//1024} kB\n",
+        "/proc/self/cgroup": "0::/job/step\n" if version == 2 else "7:memory:/job/step\n",
+        f"{base}/job/step/{limit}": "max" if version == 2 else str(2**63-4096),
+        f"{base}/job/step/{usage}": str(gib//2),
+        f"{base}/job/{limit}": str(2*gib),
+        f"{base}/job/{usage}": str(parent_usage),
+    }
+    def read(path, *args, **kwargs):
+        if str(path) not in values:
+            raise FileNotFoundError(str(path))
+        return values[str(path)]
+    monkeypatch.setattr(Path, "read_text", read)
+    assert hardware.available_memory_bytes() == 2*gib - parent_usage
 
 
 def test_preparation_workers_are_physical_core_and_memory_bounded(monkeypatch) -> None:

@@ -9,7 +9,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from igen3.generation import decode_token_batch, generate_de_novo_batch
+from igen3.generation import decode_token_batch, generate_de_novo_batch, sample_next_token
 from igen3.model import (
     CachedGPTLikeModel,
     GPTLikeModel,
@@ -205,13 +205,91 @@ def sample_policy(
     temperature: float = 1.0,
     top_k: int | None = None,
 ) -> tuple[torch.Tensor, list[str]]:
-    sampled_tokens = generate_de_novo_batch(
-        bundle.sampler,
-        batch_size,
-        temperature=temperature,
-        top_k=top_k,
-    )
+    if batch_size <= 0:
+        raise ValueError("sampling batch size must be positive")
+    # Keep the released single-call path when it fits. On capacity failure,
+    # retry the entire logical batch with smaller physical chunks: no draws
+    # are lost, and a failed attempt never advances the checkpoint RNG stream.
+    microbatch = batch_size
+    cpu_rng = torch.get_rng_state()
+    cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    while True:
+        try:
+            sampled_tokens = _sample_chunks(bundle, batch_size, microbatch, temperature, top_k)
+            break
+        except RuntimeError as exc:
+            capacity_error = isinstance(exc, torch.cuda.OutOfMemoryError) or any(
+                marker in str(exc).lower()
+                for marker in ("out of memory", "failed to allocate", "cublas_status_alloc_failed")
+            )
+            if not capacity_error:
+                raise
+            torch.set_rng_state(cpu_rng)
+            if cuda_rng is not None:
+                torch.cuda.set_rng_state_all(cuda_rng)
+            if microbatch == 1:
+                raise RuntimeError(
+                    "RL sampling is out of memory even for one sequence; free device memory or use a larger GPU. "
+                    "The scientific batch and precision have not been reduced."
+                ) from exc
+        # Exit the exception handler before freeing cached allocations, so the
+        # traceback cannot keep a failed chunk's tensors alive during retry.
+        if cuda_rng is not None:
+            torch.cuda.empty_cache()
+        microbatch = max(1, microbatch // 2)
+        print(f"[igenvs-rl] retrying {batch_size} policy draws in chunks of {microbatch}", flush=True)
     # iGen3 samples under torch.inference_mode(). Clone after that context so
     # the token tensor can safely feed the gradient-tracked policy forward.
     tokens = sampled_tokens.clone()
     return tokens, decode_token_batch(bundle.sampler, tokens)
+
+
+@torch.inference_mode()
+def _sample_chunks(bundle, batch_size: int, microbatch: int, temperature: float, top_k):
+    if microbatch >= batch_size:
+        return generate_de_novo_batch(
+            bundle.sampler, batch_size, temperature=temperature, top_k=top_k,
+        )
+    generator = bundle.sampler
+    device, vocab = generator.device, generator.vocab
+    max_len = generator.spec.seq_len
+    get_rng = (lambda: torch.cuda.get_rng_state(device)) if device.type == "cuda" else torch.get_rng_state
+    set_rng = (lambda state: torch.cuda.set_rng_state(state, device)) if device.type == "cuda" else torch.set_rng_state
+    # Sequence-major sub-batches would reorder the released token-major RNG
+    # stream. Record each full-batch draw's state instead. Replaying a small
+    # logits-sized buffer costs little memory and keeps the same Gumbel draws
+    # for every (sequence, position), including already-finished sequences.
+    logits = torch.zeros((batch_size, vocab.size), dtype=generator.dtype, device=device)
+    states = [get_rng()]
+    for _ in range(max_len - 1):
+        torch.empty_like(logits).exponential_()
+        states.append(get_rng())
+    outputs = torch.full((batch_size, max_len), vocab.pad_idx, dtype=torch.long, device=device)
+    outputs[:, 0] = vocab.sos_idx
+    ends = []
+    for begin in range(0, batch_size, microbatch):
+        stop = min(batch_size, begin + microbatch)
+        finished = torch.zeros(stop - begin, dtype=torch.bool, device=device)
+        k_caches, v_caches = generator.allocate_caches(stop - begin, max_len)
+        last_position = 0
+        for position in range(max_len - 1):
+            logits[begin:stop] = generator.model.step(
+                outputs[begin:stop, position], position, k_caches, v_caches,
+            )
+            set_rng(states[position])
+            next_tokens = sample_next_token(
+                logits, temperature=temperature, do_sample=True, top_k=top_k,
+            )[begin:stop]
+            next_tokens = torch.where(finished, torch.full_like(next_tokens, vocab.eos_idx), next_tokens)
+            outputs[begin:stop, position + 1] = next_tokens
+            finished.logical_or_(next_tokens == vocab.eos_idx)
+            last_position = position + 1
+            if bool(finished.all()):
+                break
+        ends.append((begin, stop, last_position))
+        del k_caches, v_caches
+    last_position = max(end for _, _, end in ends)
+    for begin, stop, end in ends:
+        outputs[begin:stop, end + 1:last_position + 1] = vocab.eos_idx
+    set_rng(states[last_position])
+    return outputs

@@ -63,6 +63,16 @@ through the existing iGen3 CLI.
 
 ## Scientific invariants
 
+Operational maintenance preserves those choices: all core subprocesses enter
+mounted source, successful docking requires at least one success, and logical
+shards retain exact input coverage across resume. Screening uses durable SQLite
+identity/surplus state and controller-ordered admission overlapped with scoring.
+RAM bounds include visible cgroup ancestors. RL reconciles checkpoints before
+stopping and microbatches cache/model/backward work without changing the full
+batch, FP32, token-major sampling RNG order, or mathematical objective. Reviewed
+implementation changes are tracked in `phase-10-rl-dev/maintenance.json`, separate
+from the historical protocol/freeze and acceptance evidence.
+
 - Frozen 384D `released_hybrid_w3` embeddings and Phase-5 standardizer.
 - Frozen 384-512-128 head, three seeds 260904-260906, seven epochs.
 - Original finite UDRL-train Q1% defines positives and never moves during AL.

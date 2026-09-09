@@ -8,9 +8,11 @@ import unittest
 from pathlib import Path
 
 try:
+    import numpy as np
     import torch
     from igenvs_ultra import model_ops
 except ModuleNotFoundError:  # The lightweight host driver intentionally has no ML dependency.
+    np = None
     torch = None
     model_ops = None
 
@@ -139,6 +141,35 @@ class ModelOperationIntegrationTests(unittest.TestCase):
             self.assertTrue(
                 all(float(row["ensemble_probability"]) >= threshold for row in retained)
             )
+
+            rejected_source = job / "all-policy-rejected.csv"
+            rejected_source.write_text(
+                "molecule_id,smiles,original_smiles,source_kind,source_batch,source_row\n"
+                "rejected-1,C,C,external,1,1\n",
+                encoding="utf-8",
+            )
+            args.input = rejected_source
+            args.save_policy = "all"
+            args.score_threshold = None
+            args.keep_embeddings = False
+            rejected_output = job / "scores-all-rejected.csv"
+            args.output = rejected_output
+            rejected_manifest = model_ops.run_score(args)
+            with rejected_output.open(newline="") as handle:
+                self.assertEqual(list(csv.DictReader(handle)), [])
+            self.assertEqual(rejected_manifest["encoded_rows"], 0)
+            self.assertEqual(rejected_manifest["encoder_rejected_rows"], 1)
+
+            args.keep_embeddings = True
+            retained_empty_output = job / "scores-all-rejected-retained.csv"
+            args.output = retained_empty_output
+            retained_empty_manifest = model_ops.run_score(args)
+            self.assertEqual(retained_empty_manifest["encoded_rows"], 0)
+            with np.load(
+                retained_empty_output.with_suffix(".embeddings.npz"),
+                allow_pickle=False,
+            ) as embeddings:
+                self.assertEqual(embeddings["embeddings"].shape, (0, 384))
 
 
 if __name__ == "__main__":

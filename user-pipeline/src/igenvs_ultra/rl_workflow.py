@@ -26,6 +26,8 @@ from .workflow import (
 
 
 FROZEN_PROTOCOL_SHA256 = "4b9aa7fad0e563bddb28de5edc96d061ac24b1165b4f324a9711e60416d0c03b"
+FROZEN_BUNDLE_SHA256 = "32bb9d74ef4354c9fab44a9f01bfe037e2d889b39043854c27f662040e08e3e2"
+RL_MAINTENANCE_SHA256 = "cb1195dc144b997e5bde741b56ef807f494e2316b63e2fd3dd9f236ad1c008ae"
 FROZEN_PADDING_ANGSTROM = 5.0
 FROZEN_BUNDLE = "phase-10-rl-dev"
 RL_MODEL_ID = "base-isomeric"
@@ -51,8 +53,12 @@ def frozen_rl_bundle(assets: Path) -> tuple[Path, Path, dict[str, Any]]:
     phase = assets / FROZEN_BUNDLE
     freeze_path = phase / "freeze.json"
     protocol_path = phase / "protocol.json"
+    maintenance_path = phase / "maintenance.json"
     freeze = _read_json(freeze_path)
-    if freeze.get("status") != "accepted_and_frozen":
+    if (
+        freeze.get("status") != "accepted_and_frozen"
+        or sha256(freeze_path) != FROZEN_BUNDLE_SHA256
+    ):
         raise PipelineError(f"RL bundle is not marked accepted and frozen: {freeze_path}")
     recorded = freeze.get("protocol", {}).get("sha256")
     observed = sha256(protocol_path) if protocol_path.is_file() else None
@@ -60,7 +66,20 @@ def frozen_rl_bundle(assets: Path) -> tuple[Path, Path, dict[str, Any]]:
         raise PipelineError(
             "frozen RL protocol integrity check failed; restore phase-10-rl-dev/protocol.json"
         )
-    for relative, expected in freeze.get("implementation_sha256", {}).items():
+    maintenance = _read_json(maintenance_path)
+    if (
+        sha256(maintenance_path) != RL_MAINTENANCE_SHA256
+        or maintenance.get("status") != "operational_maintenance"
+        or maintenance.get("base_freeze", {}).get("sha256") != FROZEN_BUNDLE_SHA256
+        or maintenance.get("protocol", {}).get("sha256") != FROZEN_PROTOCOL_SHA256
+    ):
+        raise PipelineError(f"RL maintenance integrity check failed: {maintenance_path}")
+    implementation = dict(freeze.get("implementation_sha256", {}))
+    overrides = maintenance.get("implementation_sha256_overrides", {})
+    if not isinstance(overrides, dict) or not set(overrides).issubset(implementation):
+        raise PipelineError(f"RL maintenance overrides are invalid: {maintenance_path}")
+    implementation.update(overrides)
+    for relative, expected in implementation.items():
         path = phase / relative
         if not path.is_file() or sha256(path) != expected:
             raise PipelineError(f"frozen RL implementation integrity check failed: {path}")
@@ -71,16 +90,24 @@ def _runtime_command(assets: Path, *arguments: str) -> list[str]:
     bootstrap = assets / "user-pipeline/src/igenvs_ultra/rl_runtime.py"
     if not bootstrap.is_file():
         raise PipelineError(f"RL runtime bootstrap is missing: {bootstrap}")
-    return ["python3", str(bootstrap), action, *arguments]
+    return ["python3", str(bootstrap), *arguments]
 
 
 def _completed_updates(stage_dir: Path) -> int:
+    progress = stage_dir / "progress.json"
+    if progress.is_file():
+        payload = _read_json(progress)
+        completed = int(payload.get("completed_updates", -1))
+        if payload.get("status") == "complete" and completed >= 0:
+            return completed
     history = stage_dir / "history.csv"
     if not history.is_file():
         return 0
     with history.open("r", encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    return int(rows[-1]["update"]) if rows else 0
+        completed = 0
+        for row in csv.DictReader(handle):
+            completed = int(row["update"])
+    return completed
 
 
 def _update_loop_seconds(stage_dir: Path) -> float:
@@ -327,6 +354,10 @@ def _init_stage(
 def _copy_reference(source_stage: Path, destination_stage: Path) -> None:
     source = source_stage / "reference"
     destination = destination_stage / "reference"
+    if not (source / "scores.json").is_file():
+        raise PipelineError(f"source RL reference is incomplete: {source}")
+    if destination.is_dir() and not (destination / "scores.json").is_file():
+        destination.rename(destination.with_name(f"reference.incomplete-{time.time_ns()}"))
     if destination.is_dir():
         if not (source / "scores.json").is_file() or sha256(source / "scores.json") != sha256(
             destination / "scores.json"
@@ -335,7 +366,19 @@ def _copy_reference(source_stage: Path, destination_stage: Path) -> None:
         return
     if not (source / "scores.json").is_file():
         raise PipelineError(f"source RL reference is incomplete: {source}")
-    shutil.copytree(source, destination)
+    temporary = destination.with_name(f"reference.copying-{time.time_ns()}")
+    shutil.copytree(source, temporary)
+    temporary.rename(destination)
+
+
+def _recover_stage(runtime: Runtime, assets: Path, job: Path, stage_dir: Path) -> int:
+    runtime.run_logged(
+        "igenvs",
+        _runtime_command(assets, "recover", "--job-dir", str(stage_dir)),
+        job / f"logs/rl-{stage_dir.name}-recover.log",
+        gpu=False,
+    )
+    return _completed_updates(stage_dir)
 
 
 def _run_training_to(
@@ -349,13 +392,20 @@ def _run_training_to(
     timing_records: list[dict[str, Any]],
     gpu_count: int,
 ) -> None:
-    completed = _completed_updates(stage_dir)
-    if completed > requested_total:
+    completed = _recover_stage(runtime, assets, job, stage_dir)
+    progress_path = stage_dir / "progress.json"
+    has_checkpoint_progress = progress_path.is_file()
+    if completed > requested_total and has_checkpoint_progress:
         raise PipelineError(
             f"RL stage {stage_name} has {completed} updates, beyond requested {requested_total}"
         )
-    remaining = requested_total - completed
-    if remaining == 0:
+    remaining = max(0, requested_total - completed)
+    progress = _read_json(progress_path) if progress_path.is_file() else {}
+    export_ready = bool(
+        progress.get("completed_updates") == requested_total
+        and progress.get("model_latest_exported")
+    )
+    if remaining == 0 and export_ready:
         print(f"[iGenVS-ultra] RL {stage_name}: already at update {completed}", flush=True)
         return
 
@@ -368,12 +418,17 @@ def _run_training_to(
             "train",
             "--job-dir",
             str(stage_dir),
-            "--updates",
-            str(remaining),
+            "--target-update",
+            str(requested_total),
         ),
         job / f"logs/rl-{stage_name}-{completed + 1}-to-{requested_total}.log",
         gpu=True,
     )
+    observed = _completed_updates(stage_dir)
+    if observed != requested_total:
+        raise PipelineError(
+            f"RL {stage_name} stopped at update {observed}; expected {requested_total}"
+        )
     elapsed = time.perf_counter() - started
     timing_records.append(
         {
@@ -496,16 +551,21 @@ def _run_adaptive_stage(
     if int(stage["updates"]) != minimum or minimum <= 0 or block <= 0 or maximum < minimum:
         raise PipelineError("frozen RL protocol has an invalid adaptive stopping schedule")
 
+    # Even a recorded stopping decision may precede an interrupted model
+    # export. Legacy history is never allowed to choose the next boundary.
+    completed = _recover_stage(runtime, assets, job, stage_dir)
     stopping_path = stage_dir / "stopping.json"
     if stopping_path.is_file():
         stopping = _read_json(stopping_path)
         if stopping.get("rule") != rule:
             raise PipelineError(f"recorded RL stopping rule differs from the frozen protocol: {stopping_path}")
-        if _completed_updates(stage_dir) != int(stopping["stopped_at_update"]):
-            raise PipelineError("completed RL updates differ from the recorded stopping decision")
-        return stopping
+        stopped_at = int(stopping["stopped_at_update"])
+        if completed == stopped_at:
+            return stopping
+        if completed > stopped_at:
+            raise PipelineError("completed RL updates exceed the recorded stopping decision")
+        stopping_path.rename(stopping_path.with_name(f"stopping.incomplete-{time.time_ns()}.json"))
 
-    completed = _completed_updates(stage_dir)
     if completed < minimum:
         target_update = minimum
     elif (completed - minimum) % block:
