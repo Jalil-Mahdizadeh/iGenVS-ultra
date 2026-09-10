@@ -5,8 +5,8 @@ Status: complete
 Operational maintenance on 2026-09-09 adds checkpoint-authoritative RL stopping
 recovery, durable screening/generator state, source-backed SIF execution,
 zero-success docking rejection, strict GPU masks, nested-cgroup RAM bounds,
-and memory-adaptive RL execution. See [the current bug-status matrix](../bugs.md)
-and [maintenance validation](../speed-bench/MAINTENANCE-2026-09-09.md).
+and memory-adaptive RL execution. See
+[maintenance validation](../speed-bench/MAINTENANCE-2026-09-09.md).
 The scientific protocol and historical acceptance evidence are unchanged.
 
 ## Delivered workflows
