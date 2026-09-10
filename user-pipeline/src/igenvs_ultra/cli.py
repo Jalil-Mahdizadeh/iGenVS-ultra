@@ -347,6 +347,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"iGenVS-ultra pipeline {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    from .guide import add_arguments as add_guide_arguments
+
+    guide_parser = subparsers.add_parser("guide", help="Guided Docker launcher for Linux/WSL.")
+    add_guide_arguments(guide_parser)
+
     check = subparsers.add_parser("doctor", help="Check released assets, containers, tools, and hardware.")
     add_runtime_arguments(check)
     check.add_argument("--no-gpu", action="store_true", help="Do not require a visible GPU for the iGenVS check.")
@@ -501,6 +506,10 @@ def main(argv: Any = None) -> int:
         )
     validate_args(parser, args)
     try:
+        if args.command == "guide":
+            from .guide import run_guide
+
+            return run_guide(args)
         if args.command == "doctor":
             return 0 if doctor(args)["ok"] else 1
         if args.command == "status":

@@ -3,6 +3,7 @@ set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 required=(
+    "start"
     "iGenVS/Dockerfile"
     "gMolAI-v2.0/Dockerfile"
     "gMolAI-v2.0/.dockerignore"
@@ -11,6 +12,8 @@ required=(
     "user-pipeline/igenvs-ultra"
     "user-pipeline/src/igenvs_ultra/rl_runtime.py"
     "user-pipeline/src/igenvs_ultra/core_runtime.py"
+    "user-pipeline/src/igenvs_ultra/guide.py"
+    "user-pipeline/src/igenvs_ultra/pose_export.py"
     "user-pipeline/src/igenvs_ultra/rl_workflow.py"
     "phase-10-rl-dev/freeze.json"
     "phase-10-rl-dev/maintenance.json"

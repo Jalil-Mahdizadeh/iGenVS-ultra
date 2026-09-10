@@ -17,6 +17,7 @@ The general form is:
 
 | Command | Purpose |
 | --- | --- |
+| `guide` | Interactive Linux/WSL Docker setup for `dock`, `run`, or `rl-train`; also available as `./start`. |
 | `doctor` | Check assets, containers, tools, and GPU visibility. |
 | `dock` | Generate or read molecules and physically dock them with Uni-Dock or AutoDock-GPU. |
 | `fit` | Prepare a target, dock the fixed training references, fit the target heads, and optionally run active learning. |
@@ -50,6 +51,12 @@ or engine default is used. A *switch* takes no value and is off unless written.
 All counts described as positive integers must be greater than zero.
 
 ## Global flags
+
+For the guided launcher, use `./start [dock|run|rl-train]` or
+`./igenvs-ultra guide [dock|run|rl-train]`. Its optional flags are
+`--assets-dir PATH`, `--gpu-ids IDS`, `--dry-run`, `--resume JOB`, and
+`--yes` (unattended resume only). Resume reuses the saved assets and GPU
+choices. See [guided setup](../user-pipeline/README.md#guided-setup).
 
 | Flag | Accepted value | Default | Description |
 | --- | --- | --- | --- |
@@ -226,7 +233,7 @@ combination.
 | `--docking-gpus` | `auto` or positive integer | `auto` | Number of visible GPUs used for physical docking. Auto uses all visible GPUs. |
 | `--scratch-dir` | directory path | system/job temporary area | Override temporary ligand and engine workspace. |
 | `--keep-work` | switch | off | Preserve temporary prepared ligands and engine files. |
-| `--pose-output` | `none`, `merged`, `individual` | `merged` for `dock`; `none` for `fit`/`run` | Save scores only, one merged pose stream, or one pose file per ligand. |
+| `--pose-output` | `none`, `merged`, `individual` | `merged` for `dock`; `none` for `fit`/`run` | Save scores only, one merged pose stream, or one pose file per ligand. `dock` also exports matching SDF files alongside PDBQT. |
 | `--individual-poses` | switch | off | Compatibility alias for `--pose-output individual`. |
 
 ### Sharding controls

@@ -1836,6 +1836,34 @@ def _merge_regular_docking_shards(
     return manifest
 
 
+def ensure_regular_sdf(args: Any, runtime: Runtime, job: Path, manifest: dict[str, Any]) -> None:
+    """Export after merging, including completed jobs resumed from older releases."""
+    mode = getattr(args, "pose_output", "none")
+    if mode == "none":
+        return
+    output = job / "docking"
+    sdf = output / ("poses.sdf" if mode == "merged" else "poses")
+    outputs = manifest.setdefault("outputs", {})
+    ready = sdf.is_file() if mode == "merged" else (
+        sdf.is_dir() and all(path.with_suffix(".sdf").is_file() for path in sdf.glob("*.pdbqt"))
+    )
+    if outputs.get("poses_sdf") == str(sdf) and ready:
+        return
+    runtime.run_logged(
+        "igenvs",
+        ["python3", str(resolve_assets(args) / "user-pipeline/src/igenvs_ultra/pose_export.py"),
+         "--docking-dir", str(output), "--pose-output", mode],
+        job / "logs/pose-export.log",
+        gpu=False,
+    )
+    if mode == "merged" and not sdf.is_file():
+        raise PipelineError(f"SDF export did not create {sdf}")
+    if mode == "individual" and (not sdf.is_dir() or any(not path.with_suffix(".sdf").is_file() for path in sdf.glob("*.pdbqt"))):
+        raise PipelineError(f"SDF export left missing individual poses in {sdf}")
+    outputs["poses_sdf"] = str(sdf)
+    atomic_json(output / "manifest.json", manifest)
+
+
 def regular_dock(args: Any) -> dict[str, Any]:
     """Run ordinary iGenVS generation/ingress, preparation, and docking only."""
     workflow_started = time.perf_counter()
@@ -1867,6 +1895,7 @@ def regular_dock(args: Any) -> dict[str, Any]:
             "outputs": {
                 "results": str(output / "results.csv"),
                 "poses": None if args.pose_output == "none" else str(output / ("poses" if args.pose_output == "individual" else "poses.pdbqt")),
+                "poses_sdf": None if args.pose_output == "none" else str(output / ("poses" if args.pose_output == "individual" else "poses.sdf")),
             },
         }
         print(json.dumps(plan, indent=2, sort_keys=True))
@@ -1976,6 +2005,7 @@ def regular_dock(args: Any) -> dict[str, Any]:
         if not _docking_completed(manifest) or not results_path.is_file():
             raise PipelineError(f"regular iGenVS docking did not complete successfully: {manifest_path}")
     docking_stage_seconds = time.perf_counter() - docking_stage_started
+    ensure_regular_sdf(args, runtime, job, manifest)
     summary = {
         "schema_version": 1,
         "status": "complete",
@@ -1987,6 +2017,7 @@ def regular_dock(args: Any) -> dict[str, Any]:
         "counts": manifest.get("counts", {}),
         "results": manifest.get("outputs", {}).get("results", str(output / "results.csv")),
         "poses": manifest.get("outputs", {}).get("poses"),
+        "poses_sdf": manifest.get("outputs", {}).get("poses_sdf"),
         "manifest": str(manifest_path),
         "timings": {
             "target_setup_seconds": target_setup_seconds,
@@ -2484,6 +2515,22 @@ def model_operation(
     )
 
 
+def required_fit_assets(assets: Path, al_rounds: int) -> list[Path]:
+    """Fit inputs; AL bundles already contain the selected molecules' SMILES."""
+    required = [
+        assets / "phase-1-udrl/library/UDRL-train.csv",
+        assets / "phase-1-udrl/library/UDRL-valid.csv",
+        assets / "phase-1-udrl/embeddings/UDRL-train-embeddings.npz",
+        assets / "phase-1-udrl/embeddings/UDRL-valid-embeddings.npz",
+        assets / "phase-5-head-selection/artifacts/input-standardizer.npz",
+    ]
+    required.extend(
+        assets / f"phase-2-al-sets/embeddings/AL-set-{number}-embeddings.npz"
+        for number in range(1, al_rounds + 1)
+    )
+    return required
+
+
 def fit(args: Any) -> dict[str, Any]:
     assets = resolve_assets(args)
     job = Path(args.output_dir).expanduser().resolve()
@@ -2504,20 +2551,7 @@ def fit(args: Any) -> dict[str, Any]:
         print(json.dumps(plan, indent=2, sort_keys=True))
         return plan
     config = ensure_fit_config(args, job, assets)
-    required = [
-        assets / "phase-1-udrl/library/UDRL-train.csv",
-        assets / "phase-1-udrl/library/UDRL-valid.csv",
-        assets / "phase-1-udrl/embeddings/UDRL-train-embeddings.npz",
-        assets / "phase-1-udrl/embeddings/UDRL-valid-embeddings.npz",
-        assets / "phase-5-head-selection/artifacts/input-standardizer.npz",
-    ]
-    for round_number in range(1, args.al_rounds + 1):
-        required.extend(
-            [
-                assets / f"phase-2-al-sets/library/AL-set-{round_number}.csv",
-                assets / f"phase-2-al-sets/embeddings/AL-set-{round_number}-embeddings.npz",
-            ]
-        )
+    required = required_fit_assets(assets, args.al_rounds)
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
         raise PipelineError(f"required release assets are missing: {missing}")
@@ -4661,19 +4695,7 @@ def doctor(args: Any) -> dict[str, Any]:
         assets / "user-pipeline/src/igenvs_ultra/model_ops.py",
         assets / "user-pipeline/src/igenvs_ultra/generation_worker.py",
     ]
-    fit_required = [
-        assets / "phase-1-udrl/library/UDRL-train.csv",
-        assets / "phase-1-udrl/library/UDRL-valid.csv",
-        assets / "phase-1-udrl/embeddings/UDRL-train-embeddings.npz",
-        assets / "phase-1-udrl/embeddings/UDRL-valid-embeddings.npz",
-    ]
-    for number in range(1, 6):
-        fit_required.extend(
-            [
-                assets / f"phase-2-al-sets/library/AL-set-{number}.csv",
-                assets / f"phase-2-al-sets/embeddings/AL-set-{number}-embeddings.npz",
-            ]
-        )
+    fit_required = required_fit_assets(assets, 5)
     core_files = {str(path): path.is_file() for path in core_required}
     fit_files = {str(path): path.is_file() for path in fit_required}
     fit_ready = all(fit_files.values())

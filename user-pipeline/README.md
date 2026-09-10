@@ -49,6 +49,72 @@ example head. The fixed UDRL/AL fitting corpus is an optional multi-gigabyte
 asset bundle. `doctor` reports its availability without failing by default;
 use `doctor --require-fit-assets` before fitting a new target.
 
+## Guided setup
+
+Run `./start` from the repository root in a Linux/WSL terminal, or
+`igenvs-ultra guide` after installing the lightweight driver. Python 3.9+
+is sufficient on the host; the guide uses the existing Docker images.
+Enter accepts a displayed default and Ctrl-C cancels.
+
+```bash
+./start                    # choose one of the three workflows
+./start dock               # go straight to docking questions
+./start run --dry-run      # check and preview, without creating a job
+./start rl-train
+```
+
+Choose an output folder and supply a complex PDB, receptor PDB with an
+aligned bound-ligand SDF, or a prepared target folder. A unique complex
+ligand is detected automatically; ambiguous complexes prompt for its ID.
+Pasted paths with spaces may be quoted. Existing files are checked as you
+enter them; CSV/TSV headers are shown for SMILES and ID column selection.
+
+| Workflow | Questions specific to this workflow |
+| --- | --- |
+| `dock` | External library or generated molecule count and iGen3 model; Uni-Dock or AutoDock-GPU; `fast`, `balance`, or `detail`; PDBQT/SDF pose files and maximum poses per molecule (Uni-Dock). |
+| `run` | AL rounds from 0 to 5; final library or generated count and iGen3 model; optional minimum ensemble score from 0 to 1 (blank saves all). |
+| `rl-train` | Target and output folder. The frozen training stages control the scientific settings. |
+
+`run` uses the published Uni-Dock/Vina `fast` fit settings. It physically
+docks 300,000 UDRL molecules plus 30,000 per requested AL round; the final
+library is scored by the neural ensemble. GPU IDs, workers and batches are
+automatic. Restrict visible GPUs at job creation with `--gpu-ids 0,1` if
+needed. Generation offers all four iGen3 models: `base-isomeric`,
+`base-nonisomeric`, `rl-isomeric`, and `rl-nonisomeric`. Enter keeps the
+existing default: `rl-nonisomeric` for `dock`, `base-isomeric` for `run`.
+
+Assets are discovered in the standard project folders. The guide asks for
+an alternative complete project/release root only if required files are
+missing; you can also pass `--assets-dir /path/to/release`. `run` needs the
+UDRL train/valid CSVs and embeddings, the input standardizer, and AL
+embeddings for the requested rounds. The separate AL CSVs are unnecessary
+for fitting; the expert `--exclude-reference-libraries` option still uses
+reference CSVs. Docking and RL do not require the UDRL/AL corpus.
+
+Before starting, the guide checks Docker, the images needed by the chosen
+workflow, tools and GPU access. It displays the resolved command, workload,
+output directory and free disk space. Free space is informational, not a
+prediction of the job's storage needs. It then asks for confirmation.
+
+After confirmation, choices and the execution plan are saved **beside** the
+job as `JOB.launch.json`, so the pipeline can initialize its own empty job
+folder. Keep this file with the job. To reuse those choices after a failure
+or interruption:
+
+```bash
+./start --resume runs/my-job
+./start --resume runs/my-job --dry-run
+./start --resume runs/my-job --yes  # unattended resume
+```
+
+Entering a previous guided output folder also offers resume. The underlying
+pipeline reuses completed stages and checks its existing job configuration.
+Jobs created through the expert CLI should be resumed with their original
+CLI command. Changed CLI defaults are flagged for review on guided resume.
+New guided jobs require an interactive terminal; scripts can use the
+existing CLI directly. On completion the guide prints result paths and, for
+RL, a separate example `rl-generate` command.
+
 ## Workflow 1: regular iGenVS docking
 
 Use `dock` when actual docking scores and poses are wanted for the supplied
@@ -81,6 +147,13 @@ library. It is a resumable, hardware-aware wrapper around the released
 Regular mode follows the original defaults: `--search-mode balance` and
 `--pose-output merged`. Use `--pose-output none` for a large ranking-only
 docking run, or `--pose-output individual` for separate ligand pose files.
+Merged output includes both `poses.pdbqt` and `poses.sdf`; individual output
+includes a `.pdbqt`/`.sdf` pair per molecule. The SDF export uses
+[Meeko](https://meeko.readthedocs.io/en/develop/export_usage.html) to retain
+the input chemistry and docked coordinates. It runs after docking, including
+after a resume when SDF files are missing; existing docking results are reused.
+Uni-Dock exports every saved pose; AutoDock-GPU currently saves one best pose
+per molecule. Scores-only mode creates neither pose format.
 Uni-Dock and AutoDock-GPU, generation, CSV/SMI parsing, validation,
 deduplication, preparation, batch profiles, manual shards, scratch, and pose
 options are exposed by `igenvs-ultra dock --help`.
@@ -117,6 +190,7 @@ runs/my-regular-docking/
   target/                    reusable prepared target
   docking/results.csv        terminal result for every admitted molecule
   docking/poses.pdbqt        merged poses (with the default pose policy)
+  docking/poses.sdf          the same poses as SDF molecules
   docking/manifest.json      protocol, counts, timings, hardware, and paths
   regular-summary.json       compact wrapper summary
 ```

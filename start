@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""Start the Linux/WSL guided launcher from a source checkout."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "user-pipeline/src"))
+
+from igenvs_ultra.cli import main  # noqa: E402
+
+raise SystemExit(main(["guide", *sys.argv[1:]]))

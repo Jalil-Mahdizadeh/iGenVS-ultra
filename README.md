@@ -64,6 +64,24 @@ generation, fitting, screening, and RL tuning.
 the two Docker images above, then a native installation. Pass
 `--execution docker` to require Docker explicitly.
 
+## Guided setup
+
+For guided setup in a Linux/WSL terminal, run `./start`. Choose `dock`, `run`,
+or `rl-train`, then answer the input and output questions. The guide checks
+the required Docker images, assets and GPU access, previews the workload,
+and asks before starting. For example:
+
+```bash
+./start dock
+./start run --dry-run
+./start --resume runs/my-job
+```
+
+The docking presets are `fast`, `balance` (default), and `detail`. Fitting
+and RL retain their published scientific settings. See
+[guided setup](user-pipeline/README.md#guided-setup) for the questions,
+saved choices and resume behavior.
+
 ## Start docking
 
 The repository includes a three-molecule input and a 4AG8 complex, so this is
