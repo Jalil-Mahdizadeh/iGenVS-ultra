@@ -74,6 +74,27 @@ class GuideTests(unittest.TestCase):
         self.assertFalse(self.job.exists())
         self.assertFalse(guide.record_path(self.job).exists())
 
+    def test_workflow_menu_names_preserve_command_keys(self):
+        workflows = (("dock", "Docking"), ("run", "Screening-AL"), ("rl-train", "iGen3-RL"))
+        for index, (pipeline, name) in enumerate(workflows, 1):
+            self.assertEqual(options(pipeline).pipeline, pipeline)
+            answers = [str(index), name, name.lower(), pipeline]
+            if pipeline == "dock":
+                answers.append("")
+            for answer in answers:
+                with self.subTest(answer=answer), mock.patch("builtins.input", return_value=answer) as prompt, \
+                        mock.patch.object(guide, "select_job", side_effect=EOFError) as select_job:
+                    self.assertEqual(guide.run_guide(options()), 130)
+                    select_job.assert_called_once_with(pipeline)
+                    prompt.assert_called_once_with("Choice [Docking]: ")
+        self.assertIn(
+            "Choose a workflow\n"
+            "  1. Docking - Physical docking pipeline with Uni-Dock (vina) or AutoDock-GPU (AD4) (default)\n"
+            "  2. Screening-AL - Active learning pipeline, fit a target-specific model, screen a library with it\n"
+            "  3. iGen3-RL - Reinforcement learning pipeline, train a target-specific molecule generator\n",
+            self.output.getvalue(),
+        )
+
     def test_each_workflow_previews_with_real_cli_planner(self):
         cases = {
             "dock": [str(self.job), "complex", str(COMPLEX), "generate", "3", "", "unidock", "balance", "none"],

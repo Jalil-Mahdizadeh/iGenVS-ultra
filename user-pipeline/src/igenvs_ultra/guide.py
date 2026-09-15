@@ -26,6 +26,7 @@ PIPELINES = (
     ("run", "Active learning pipeline, fit a target-specific model, screen a library with it"),
     ("rl-train", "Reinforcement learning pipeline, train a target-specific molecule generator"),
 )
+PIPELINE_NAMES = {"dock": "Docking", "run": "Screening-AL", "rl-train": "iGen3-RL"}
 GENERATION_MODELS = (
     ("base-isomeric", "Base model, with stereochemistry"),
     ("base-nonisomeric", "Base model, without stereochemistry"),
@@ -83,10 +84,11 @@ def ask(label: str, default: str | None = None, parse: Callable = str) -> Any:
             notice(f"Please try again: {exc}", "WARN")
 
 
-def choose(label: str, choices: list | tuple, default: str) -> str:
+def choose(label: str, choices: list | tuple, default: str, *, names: dict[str, str] | None = None) -> str:
+    names = names or {}
     heading(label)
     for index, (key, description) in enumerate(choices, 1):
-        name = f"{index}. {key or 'auto'}"
+        name = f"{index}. {names.get(key, key or 'auto')}"
         if key == default:
             name = colour(name, "1;36")
         suffix = colour(" (default)", "2") if key == default else ""
@@ -94,11 +96,12 @@ def choose(label: str, choices: list | tuple, default: str) -> str:
 
     def parse(value: str) -> str:
         for index, (key, _) in enumerate(choices, 1):
-            if value == str(index) or value.casefold() == (key or "auto").casefold():
+            aliases = ((key or "auto").casefold(), names.get(key, key or "auto").casefold())
+            if value == str(index) or value.casefold() in aliases:
                 return key
         raise ValueError("choose a listed number or name")
 
-    return ask("Choice", default or "auto", parse)
+    return ask("Choice", names.get(default, default or "auto"), parse)
 
 
 def confirm(label: str, *, default: bool = False) -> bool:
@@ -493,7 +496,7 @@ def run_guide(options: argparse.Namespace) -> int:
         if options.resume:
             job, saved = options.resume.expanduser().resolve(), True
         else:
-            pipeline = options.pipeline or choose("Choose a workflow", PIPELINES, "dock")
+            pipeline = options.pipeline or choose("Choose a workflow", PIPELINES, "dock", names=PIPELINE_NAMES)
             job, saved = select_job(pipeline)
         if saved:
             step(1, 4, "Saved choices")
