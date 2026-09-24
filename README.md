@@ -69,13 +69,29 @@ the two Docker images above, then a native installation. Pass
 For guided setup in a Linux/WSL terminal, run `./start`. Choose `dock`, `run`,
 or `rl-train`, then answer the input and output questions. The guide checks
 the required Docker images, assets and GPU access, previews the workload,
-and asks before starting. For example:
+and asks before starting.
+
+When using images tagged `igenvs-ultra:igenvs` and `igenvs-ultra:gmolai`, you
+must export their names in the same Linux/WSL terminal before launching the
+guide. From the repository root, run:
+
+```bash
+export IGENVS_DOCKER_IMAGE=igenvs-ultra:igenvs
+export GMOLAI_DOCKER_IMAGE=igenvs-ultra:gmolai
+./start
+```
+
+Repeat the exports in each new terminal, unless they are already set in your
+shell startup configuration. Other invocations in the same terminal include:
 
 ```bash
 ./start dock
 ./start run --dry-run
 ./start --resume runs/my-job
 ```
+
+Saved jobs retain their original image names; these exports do not override
+the image choices recorded for `--resume`.
 
 The docking presets are `fast`, `balance` (default), and `detail`. Fitting
 and RL retain their published scientific settings. See

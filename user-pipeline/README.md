@@ -56,8 +56,24 @@ Run `./start` from the repository root in a Linux/WSL terminal, or
 is sufficient on the host; the guide uses the existing Docker images.
 Enter accepts a displayed default and Ctrl-C cancels.
 
+For Docker images tagged `igenvs-ultra:igenvs` and `igenvs-ultra:gmolai`, you
+must export both image names before running `./start`. Run these commands
+from the repository root in the same Linux/WSL terminal:
+
 ```bash
-./start                    # choose one of the three workflows
+export IGENVS_DOCKER_IMAGE=igenvs-ultra:igenvs
+export GMOLAI_DOCKER_IMAGE=igenvs-ultra:gmolai
+./start
+```
+
+Without these exports, `./start` uses the defaults `igenvs-ultra/igenvs:latest`
+and `igenvs-ultra/gmolai:latest`. Editing the separate `./igenvs-ultra` shell
+wrapper does not change `./start`. Repeat the exports in each new terminal,
+or add them to `~/.bashrc` if you use Bash.
+
+After exporting the image names, you can also select a workflow directly:
+
+```bash
 ./start dock               # go straight to docking questions
 ./start run --dry-run      # check and preview, without creating a job
 ./start rl-train
@@ -106,6 +122,9 @@ or interruption:
 ./start --resume runs/my-job --dry-run
 ./start --resume runs/my-job --yes  # unattended resume
 ```
+
+Saved jobs retain the image names recorded at creation; changing the exports
+does not override those names on `--resume`.
 
 Entering a previous guided output folder also offers resume. The underlying
 pipeline reuses completed stages and checks its existing job configuration.
