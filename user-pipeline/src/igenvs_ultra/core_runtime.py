@@ -27,7 +27,9 @@ def main(argv: list[str] | None = None) -> int:
         from igenvs.cli import main as cli_main
     else:
         from igen3.cli import main as cli_main
-    return int(cli_main(arguments))
+    # iGen3 returns None on success; iGenVS returns an integer exit status.
+    result = cli_main(arguments)
+    return 0 if result is None else int(result)
 
 
 if __name__ == "__main__":
