@@ -56,6 +56,7 @@ RESULT_FIELDS = [
     "docking_engine",
     "scoring_function",
     "docking_score",
+    "pose_rank",
     "num_poses",
     "heavy_atoms",
     "rotatable_bonds",
@@ -221,6 +222,7 @@ def _failure_row(
         "docking_engine": engine,
         "scoring_function": scoring,
         "docking_score": "",
+        "pose_rank": "",
         "num_poses": 0,
         "heavy_atoms": record.heavy_atoms,
         "rotatable_bonds": record.rotatable_bonds,
@@ -234,16 +236,16 @@ def _failure_row(
     }
 
 
-def _result_row(
+def _result_rows(
     result: DockingResult,
     batch_id: int,
     pose_ref: str,
     *,
     engine: str,
     scoring: str,
-) -> dict[str, object]:
+) -> Iterator[dict[str, object]]:
     record = result.ligand.record
-    return {
+    row = {
         "molecule_id": record.molecule_id,
         "original_smiles": record.original_smiles,
         "canonical_smiles": record.canonical_smiles,
@@ -251,7 +253,8 @@ def _result_row(
         "status": result.status,
         "docking_engine": engine,
         "scoring_function": scoring,
-        "docking_score": f"{result.scores[0]:.6f}" if result.scores else "",
+        "docking_score": "",
+        "pose_rank": "",
         "num_poses": len(result.scores),
         "heavy_atoms": record.heavy_atoms,
         "rotatable_bonds": record.rotatable_bonds,
@@ -263,6 +266,11 @@ def _result_row(
         "pose_ref": pose_ref,
         "error": result.error,
     }
+    if not result.scores:
+        yield row
+    else:
+        for rank, score in enumerate(result.scores, 1):
+            yield {**row, "pose_rank": rank, "docking_score": f"{score:.6f}"}
 
 
 def _persist_pose(
@@ -413,8 +421,10 @@ def run_screen(config: ScreenConfig) -> dict[str, Any]:
             raise InputError("AutoDock-GPU requires an existing .maps.fld grid")
         if autodock_gpu_fld.suffix.lower() != ".fld":
             raise InputError("AutoDock-GPU grid descriptor must end in .fld")
-        if config.num_modes != 1:
-            raise InputError("AutoDock-GPU currently emits exactly one best pose")
+        if not 1 <= config.num_modes <= 8192:
+            raise InputError("AutoDock-GPU pose count must be between 1 and 8192")
+        if config.autodock_gpu_runs is not None and config.autodock_gpu_runs < config.num_modes:
+            raise InputError("AutoDock-GPU runs must be at least the requested pose count")
     prepared_target = None
     if config.target is not None:
         prepared_target = load_target(config.target)
@@ -599,6 +609,11 @@ def run_screen(config: ScreenConfig) -> dict[str, Any]:
             "first_preparation_batch_size": first_batch_size,
             "adaptive_preparation_ramp": first_batch_size < batch_size,
             "pose_output": pose_output,
+            "results_row_unit": "pose",
+            "requested_poses_per_molecule": config.num_modes,
+            "pose_energy_cutoff": None,
+            "pose_min_rmsd": 0.0 if config.engine == "unidock" else None,
+            "ring_closure_validation": pose_output != "none",
             "refine_step": config.refine_step,
             "no_refine": config.no_refine,
             "unidock_verbosity": config.unidock_verbosity,
@@ -771,8 +786,8 @@ def run_screen(config: ScreenConfig) -> dict[str, Any]:
                                 merged_handle=pose_handle,
                                 pose_output=pose_output,
                             )
-                            batch_rows.append(
-                                _result_row(
+                            batch_rows.extend(
+                                _result_rows(
                                     result,
                                     batch_id,
                                     pose_ref,

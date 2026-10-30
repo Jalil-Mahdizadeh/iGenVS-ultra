@@ -38,15 +38,16 @@ RUN apt-get update \
 COPY third_party/Uni-Dock/unidock /src/unidock
 COPY containers/patches/unidock-1.2.0-respect-max-gpu-memory.patch /src/unidock.patch
 COPY containers/patches/unidock-1.2.0-scores-only-output.patch /src/unidock-scores.patch
+COPY containers/patches/unidock-1.2.0-ring-closure-and-poses.patch /src/unidock-rings.patch
 
 RUN sed -i 's/\r$//' \
         /src/unidock.patch \
         /src/unidock-scores.patch \
-        /src/unidock/src/lib/vina.cpp \
-        /src/unidock/src/lib/vina.h \
-        /src/unidock/src/main/main.cpp \
+        /src/unidock-rings.patch \
+    && find /src/unidock/src -type f -exec sed -i 's/\r$//' {} + \
     && patch -d /src/unidock -p1 < /src/unidock.patch \
     && patch -l -d /src/unidock -p1 < /src/unidock-scores.patch \
+    && patch -l -d /src/unidock -p1 < /src/unidock-rings.patch \
     && cmake \
         -S /src/unidock \
         -B /tmp/unidock-build \
@@ -193,7 +194,7 @@ LABEL org.opencontainers.image.title="iGenVS" \
     org.opencontainers.image.architecture="amd64" \
     igenvs.unidock.version="1.2.0" \
     igenvs.unidock.commit="95e409172b15dec0989aea70b0f2328e8ca52025" \
-    igenvs.unidock.patch="respect-max-gpu-memory,scores-only-output" \
+    igenvs.unidock.patch="respect-max-gpu-memory,scores-only-output,ring-closure-and-poses" \
     igenvs.autodock-gpu.version="1.6" \
     igenvs.autodock-gpu.commit="e63e6f6280ebfad18caa3e8f48afdc269e79e063" \
     igenvs.autodock-gpu.work-items="64,128,256" \

@@ -1,0 +1,566 @@
+diff --git a/src/cuda/atom_constants_gpu.cuh b/src/cuda/atom_constants_gpu.cuh
+index 75bae5a..40c1cb7 100644
+--- a/src/cuda/atom_constants_gpu.cuh
++++ b/src/cuda/atom_constants_gpu.cuh
+@@ -309,15 +309,15 @@ __device__ __constant__ fl xs_vdw_radii_gpu[] = {
+     1.2,  // Met_D
+     1.9,  // C_H_CG0
+     1.9,  // C_P_CG0
++    0.0,  // G0
+     1.9,  // C_H_CG1
+     1.9,  // C_P_CG1
++    0.0,  // G1
+     1.9,  // C_H_CG2
+     1.9,  // C_P_CG2
++    0.0,  // G2
+     1.9,  // C_H_CG3
+     1.9,  // C_P_CG3
+-    0.0,  // G0
+-    0.0,  // G1
+-    0.0,  // G2
+     0.0,  // G3
+     0.0,   // W
+     1.7, // O_XA
+@@ -348,15 +348,15 @@ __device__ __constant__ fl xs_vinardo_vdw_radii_gpu[] = {
+     1.2,  // Met_D
+     2.0,  // C_H_CG0
+     2.0,  // C_P_CG0
++    0.0,  // G0
+     2.0,  // C_H_CG1
+     2.0,  // C_P_CG1
++    0.0,  // G1
+     2.0,  // C_H_CG2
+     2.0,  // C_P_CG2
++    0.0,  // G2
+     2.0,  // C_H_CG3
+     2.0,  // C_P_CG3
+-    0.0,  // G0
+-    0.0,  // G1
+-    0.0,  // G2
+     0.0,  // G3
+     0.0,   // W
+     1.6, // O_XA
+diff --git a/src/cuda/common.cuh b/src/cuda/common.cuh
+index 7723971..8485dc5 100644
+--- a/src/cuda/common.cuh
++++ b/src/cuda/common.cuh
+@@ -641,13 +641,30 @@ __device__ __forceinline__ float g_evaluate(grid_cuda_t_<Config> *g, const float
+     }
+ }
+ 
++// Match the CPU grid's treatment of macrocycle closure atoms.
++__device__ __forceinline__ int receptor_grid_type(int t, int atu) {
++    if (atu == atom_type::XS) {
++        switch (t) {
++            case XS_TYPE_G0: case XS_TYPE_G1: case XS_TYPE_G2: case XS_TYPE_G3:
++                return XS_TYPE_SIZE;
++            case XS_TYPE_C_H_CG0: case XS_TYPE_C_H_CG1:
++            case XS_TYPE_C_H_CG2: case XS_TYPE_C_H_CG3:
++                return XS_TYPE_C_H;
++            case XS_TYPE_C_P_CG0: case XS_TYPE_C_P_CG1:
++            case XS_TYPE_C_P_CG2: case XS_TYPE_C_P_CG3:
++                return XS_TYPE_C_P;
++        }
++    }
++    return t;
++}
++
+ __device__ __forceinline__ float ig_eval_deriv(output_type_cuda_t *x, change_cuda_t *g,
+                                                const float v, ig_cuda_t *ig_cuda_gpu,
+                                                m_cuda_t *m_cuda_gpu, const float epsilon_fl) {
+     float e = 0;
+     int nat = num_atom_types(ig_cuda_gpu->atu);
+     for (int i = 0; i < m_cuda_gpu->m_num_movable_atoms; i++) {
+-        int t = m_cuda_gpu->atoms[i].types[ig_cuda_gpu->atu];
++        int t = receptor_grid_type(m_cuda_gpu->atoms[i].types[ig_cuda_gpu->atu], ig_cuda_gpu->atu);
+         if (t >= nat) {
+             for (int j = 0; j < 3; j++) m_cuda_gpu->minus_forces.coords[i][j] = 0;
+             continue;
+@@ -669,7 +686,7 @@ __device__ __forceinline__ float ig_eval_deriv(output_type_cuda_t_<Config> *x, c
+     float e = 0;
+     int nat = num_atom_types(ig_cuda_gpu->atu);
+     for (int i = 0; i < m_cuda_gpu->m_num_movable_atoms; i++) {
+-        int t = m_cuda_gpu->atoms[i].types[ig_cuda_gpu->atu];
++        int t = receptor_grid_type(m_cuda_gpu->atoms[i].types[ig_cuda_gpu->atu], ig_cuda_gpu->atu);
+         if (t >= nat) {
+             for (int j = 0; j < 3; j++) m_cuda_gpu->minus_forces.coords[i][j] = 0;
+             continue;
+@@ -985,11 +1002,19 @@ __device__ __forceinline__ float eval_interacting_pairs_deriv(p_cuda_t *p_cuda_g
+             = {coords_b[0] - coords_a[0], coords_b[1] - coords_a[1], coords_b[2] - coords_a[2]};
+         float r2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
+ 
+-        if (r2 < p_cuda_gpu->m_cutoff_sqr) {
++        const bool closure = pairs->type_pair_index[i] < 0;
++        if (closure || r2 < p_cuda_gpu->m_cutoff_sqr) {
+             float tmp[2];
+-            p_eval_deriv(tmp, index, r2, p_cuda_gpu, epsilon_fl);
++            if (closure) {
++                // Exact restraint: no nonbonded cutoff, table smoothing or curl.
++                const float distance = sqrtf(r2 + 1e-6f);
++                tmp[0] = p_cuda_gpu->m_glue_weight * (distance - 1e-3f);
++                tmp[1] = p_cuda_gpu->m_glue_weight / distance;
++            } else {
++                p_eval_deriv(tmp, index, r2, p_cuda_gpu, epsilon_fl);
++            }
+             float force[3] = {r[0] * tmp[1], r[1] * tmp[1], r[2] * tmp[1]};
+-            curl(&tmp[0], force, v, epsilon_fl);
++            if (!closure) curl(&tmp[0], force, v, epsilon_fl);
+             e += tmp[0];
+             for (int j = 0; j < 3; j++) minus_forces->coords[ip[1]][j] -= force[j];
+             for (int j = 0; j < 3; j++) minus_forces->coords[ip[2]][j] += force[j];
+@@ -1015,11 +1040,19 @@ __device__ __forceinline__ float eval_interacting_pairs_deriv(p_cuda_t_<Config>
+             = {coords_b[0] - coords_a[0], coords_b[1] - coords_a[1], coords_b[2] - coords_a[2]};
+         float r2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
+ 
+-        if (r2 < p_cuda_gpu->m_cutoff_sqr) {
++        const bool closure = pairs->type_pair_index[i] < 0;
++        if (closure || r2 < p_cuda_gpu->m_cutoff_sqr) {
+             float tmp[2];
+-            p_eval_deriv<Config>(tmp, index, r2, p_cuda_gpu, epsilon_fl);
++            if (closure) {
++                // Exact restraint: no nonbonded cutoff, table smoothing or curl.
++                const float distance = sqrtf(r2 + 1e-6f);
++                tmp[0] = p_cuda_gpu->m_glue_weight * (distance - 1e-3f);
++                tmp[1] = p_cuda_gpu->m_glue_weight / distance;
++            } else {
++                p_eval_deriv<Config>(tmp, index, r2, p_cuda_gpu, epsilon_fl);
++            }
+             float force[3] = {r[0] * tmp[1], r[1] * tmp[1], r[2] * tmp[1]};
+-            curl(&tmp[0], force, v, epsilon_fl);
++            if (!closure) curl(&tmp[0], force, v, epsilon_fl);
+             e += tmp[0];
+             for (int j = 0; j < 3; j++) minus_forces->coords[ip[1]][j] -= force[j];
+             for (int j = 0; j < 3; j++) minus_forces->coords[ip[2]][j] += force[j];
+diff --git a/src/cuda/kernel.h b/src/cuda/kernel.h
+index c82abd4..96fb2e3 100644
+--- a/src/cuda/kernel.h
++++ b/src/cuda/kernel.h
+@@ -391,6 +391,7 @@ typedef struct {
+ } p_m_data_cuda_t;
+ 
+ typedef struct {
++    float m_glue_weight;
+     float m_cutoff_sqr;
+     int n;
+     float factor;
+@@ -399,6 +400,7 @@ typedef struct {
+ } p_cuda_t;
+ 
+ typedef struct {
++    float m_glue_weight;
+     float m_cutoff_sqr;
+     int n;
+     float factor;
+@@ -550,6 +552,7 @@ struct p_m_data_cuda_t_{
+ } ;
+ template <typename Config>
+ struct p_cuda_t_ {
++    float m_glue_weight;
+     float m_cutoff_sqr;
+     int n;
+     float factor;
+@@ -558,6 +561,7 @@ struct p_cuda_t_ {
+ } ;
+ template <typename Config>
+ struct p_cuda_t_cpu_ {
++    float m_glue_weight;
+     float m_cutoff_sqr;
+     int n;
+     float factor;
+diff --git a/src/cuda/monte_carlo.cu b/src/cuda/monte_carlo.cu
+index b230351..54f2456 100644
+--- a/src/cuda/monte_carlo.cu
++++ b/src/cuda/monte_carlo.cu
+@@ -571,11 +571,21 @@ __host__ void monte_carlo::mc_stream(
+                 }
+             }
+ 
+-            m_cuda->ligand.pairs.num_pairs = m.ligands[0].pairs.size();
++            // Ring-closure restraints live outside ligand.pairs in the CPU
++            // model. They must also participate in every GPU optimization.
++            interacting_pairs gpu_pairs = m.ligands[0].pairs;
++            const interacting_pairs closure_pairs = m.get_glue_pairs();
++            gpu_pairs.insert(gpu_pairs.end(), closure_pairs.begin(), closure_pairs.end());
++            const size_t pair_capacity = sizeof(m_cuda->ligand.pairs.a)
++                                         / sizeof(m_cuda->ligand.pairs.a[0]);
++            if (gpu_pairs.size() > pair_capacity)
++                throw std::runtime_error("Ligand interactions exceed GPU pair capacity");
++            m_cuda->ligand.pairs.num_pairs = gpu_pairs.size();
+             for (int i = 0; i < m_cuda->ligand.pairs.num_pairs; i++) {
+-                m_cuda->ligand.pairs.type_pair_index[i] = m.ligands[0].pairs[i].type_pair_index;
+-                m_cuda->ligand.pairs.a[i] = m.ligands[0].pairs[i].a;
+-                m_cuda->ligand.pairs.b[i] = m.ligands[0].pairs[i].b;
++                m_cuda->ligand.pairs.type_pair_index[i] = i < m.ligands[0].pairs.size()
++                    ? gpu_pairs[i].type_pair_index : -1; // analytic closure restraint
++                m_cuda->ligand.pairs.a[i] = gpu_pairs[i].a;
++                m_cuda->ligand.pairs.b[i] = gpu_pairs[i].b;
+             }
+             m_cuda->ligand.begin = m.ligands[0].begin;  // 0
+             m_cuda->ligand.end = m.ligands[0].end;      // 29
+@@ -687,6 +697,7 @@ __host__ void monte_carlo::mc_stream(
+             DEBUG_PRINTF("Preaparing p related data\n");  // debug
+ 
+             // copy pointer instead of data
++            p_cuda->m_glue_weight = p.m_glue_weight;
+             p_cuda->m_cutoff_sqr = p.m_cutoff_sqr;
+             p_cuda->factor = p.m_factor;
+             p_cuda->n = p.m_n;
+@@ -1365,11 +1376,21 @@ __host__ void monte_carlo::operator()(
+                 }
+             }
+ 
+-            m_cuda->ligand.pairs.num_pairs = m.ligands[0].pairs.size();
++            // Ring-closure restraints live outside ligand.pairs in the CPU
++            // model. They must also participate in every GPU optimization.
++            interacting_pairs gpu_pairs = m.ligands[0].pairs;
++            const interacting_pairs closure_pairs = m.get_glue_pairs();
++            gpu_pairs.insert(gpu_pairs.end(), closure_pairs.begin(), closure_pairs.end());
++            const size_t pair_capacity = sizeof(m_cuda->ligand.pairs.a)
++                                         / sizeof(m_cuda->ligand.pairs.a[0]);
++            if (gpu_pairs.size() > pair_capacity)
++                throw std::runtime_error("Ligand interactions exceed GPU pair capacity");
++            m_cuda->ligand.pairs.num_pairs = gpu_pairs.size();
+             for (int i = 0; i < m_cuda->ligand.pairs.num_pairs; i++) {
+-                m_cuda->ligand.pairs.type_pair_index[i] = m.ligands[0].pairs[i].type_pair_index;
+-                m_cuda->ligand.pairs.a[i] = m.ligands[0].pairs[i].a;
+-                m_cuda->ligand.pairs.b[i] = m.ligands[0].pairs[i].b;
++                m_cuda->ligand.pairs.type_pair_index[i] = i < m.ligands[0].pairs.size()
++                    ? gpu_pairs[i].type_pair_index : -1; // analytic closure restraint
++                m_cuda->ligand.pairs.a[i] = gpu_pairs[i].a;
++                m_cuda->ligand.pairs.b[i] = gpu_pairs[i].b;
+             }
+             m_cuda->ligand.begin = m.ligands[0].begin;  // 0
+             m_cuda->ligand.end = m.ligands[0].end;      // 29
+@@ -1479,6 +1500,7 @@ __host__ void monte_carlo::operator()(
+             DEBUG_PRINTF("Preaparing p related data\n");  // debug
+ 
+             // copy pointer instead of data
++            p_cuda->m_glue_weight = p.m_glue_weight;
+             p_cuda->m_cutoff_sqr = p.m_cutoff_sqr;
+             p_cuda->factor = p.m_factor;
+             p_cuda->n = p.m_n;
+@@ -1933,11 +1955,21 @@ __host__ void monte_carlo_template::operator()(
+                 }
+             }
+ 
+-            m_cuda->ligand.pairs.num_pairs = m.ligands[0].pairs.size();
++            // Ring-closure restraints live outside ligand.pairs in the CPU
++            // model. They must also participate in every GPU optimization.
++            interacting_pairs gpu_pairs = m.ligands[0].pairs;
++            const interacting_pairs closure_pairs = m.get_glue_pairs();
++            gpu_pairs.insert(gpu_pairs.end(), closure_pairs.begin(), closure_pairs.end());
++            const size_t pair_capacity = sizeof(m_cuda->ligand.pairs.a)
++                                         / sizeof(m_cuda->ligand.pairs.a[0]);
++            if (gpu_pairs.size() > pair_capacity)
++                throw std::runtime_error("Ligand interactions exceed GPU pair capacity");
++            m_cuda->ligand.pairs.num_pairs = gpu_pairs.size();
+             for (int i = 0; i < m_cuda->ligand.pairs.num_pairs; i++) {
+-                m_cuda->ligand.pairs.type_pair_index[i] = m.ligands[0].pairs[i].type_pair_index;
+-                m_cuda->ligand.pairs.a[i] = m.ligands[0].pairs[i].a;
+-                m_cuda->ligand.pairs.b[i] = m.ligands[0].pairs[i].b;
++                m_cuda->ligand.pairs.type_pair_index[i] = i < m.ligands[0].pairs.size()
++                    ? gpu_pairs[i].type_pair_index : -1; // analytic closure restraint
++                m_cuda->ligand.pairs.a[i] = gpu_pairs[i].a;
++                m_cuda->ligand.pairs.b[i] = gpu_pairs[i].b;
+             }
+             m_cuda->ligand.begin = m.ligands[0].begin;  // 0
+             m_cuda->ligand.end = m.ligands[0].end;      // 29
+@@ -2047,6 +2079,7 @@ __host__ void monte_carlo_template::operator()(
+             DEBUG_PRINTF("Preaparing p related data\n");  // debug
+ 
+             // copy pointer instead of data
++            p_cuda->m_glue_weight = p.m_glue_weight;
+             p_cuda->m_cutoff_sqr = p.m_cutoff_sqr;
+             p_cuda->factor = p.m_factor;
+             p_cuda->n = p.m_n;
+@@ -2584,11 +2617,21 @@ __host__ void monte_carlo_template::do_docking_base<Config>(std::vector<model> &
+                 }
+             }
+ 
+-            m_cuda->ligand.pairs.num_pairs = m.ligands[0].pairs.size();
++            // Ring-closure restraints live outside ligand.pairs in the CPU
++            // model. They must also participate in every GPU optimization.
++            interacting_pairs gpu_pairs = m.ligands[0].pairs;
++            const interacting_pairs closure_pairs = m.get_glue_pairs();
++            gpu_pairs.insert(gpu_pairs.end(), closure_pairs.begin(), closure_pairs.end());
++            const size_t pair_capacity = sizeof(m_cuda->ligand.pairs.a)
++                                         / sizeof(m_cuda->ligand.pairs.a[0]);
++            if (gpu_pairs.size() > pair_capacity)
++                throw std::runtime_error("Ligand interactions exceed GPU pair capacity");
++            m_cuda->ligand.pairs.num_pairs = gpu_pairs.size();
+             for (int i = 0; i < m_cuda->ligand.pairs.num_pairs; i++) {
+-                m_cuda->ligand.pairs.type_pair_index[i] = m.ligands[0].pairs[i].type_pair_index;
+-                m_cuda->ligand.pairs.a[i] = m.ligands[0].pairs[i].a;
+-                m_cuda->ligand.pairs.b[i] = m.ligands[0].pairs[i].b;
++                m_cuda->ligand.pairs.type_pair_index[i] = i < m.ligands[0].pairs.size()
++                    ? gpu_pairs[i].type_pair_index : -1; // analytic closure restraint
++                m_cuda->ligand.pairs.a[i] = gpu_pairs[i].a;
++                m_cuda->ligand.pairs.b[i] = gpu_pairs[i].b;
+             }
+             m_cuda->ligand.begin = m.ligands[0].begin;  // 0
+             m_cuda->ligand.end = m.ligands[0].end;      // 29
+@@ -2701,6 +2744,7 @@ __host__ void monte_carlo_template::do_docking_base<Config>(std::vector<model> &
+             DEBUG_PRINTF("Preaparing p related data\n");  // debug
+ 
+             // copy pointer instead of data
++            p_cuda->m_glue_weight = p.m_glue_weight;
+             p_cuda->m_cutoff_sqr = p.m_cutoff_sqr;
+             p_cuda->factor = p.m_factor;
+             p_cuda->n = p.m_n;
+diff --git a/src/cuda/warp_ops.cuh b/src/cuda/warp_ops.cuh
+index 204db66..7fa6b33 100644
+--- a/src/cuda/warp_ops.cuh
++++ b/src/cuda/warp_ops.cuh
+@@ -498,7 +498,7 @@ __device__ __forceinline__ float ig_eval_deriv_warp(cg::thread_block_tile<TileSi
+     float deriv[3];
+     int nat = num_atom_types(ig_cuda_gpu->atu);
+     for (int i = tile.thread_rank(); i < m_cuda_gpu->m_num_movable_atoms; i += tile.num_threads()) {
+-        int t = m_cuda_gpu->atoms[i].types[ig_cuda_gpu->atu];
++        int t = receptor_grid_type(m_cuda_gpu->atoms[i].types[ig_cuda_gpu->atu], ig_cuda_gpu->atu);
+         if (t >= nat) {
+             m_cuda_gpu->minus_forces.coords[i][0] = 0.0f;
+             m_cuda_gpu->minus_forces.coords[i][1] = 0.0f;
+@@ -525,7 +525,7 @@ __device__ __forceinline__ float ig_eval_deriv_warp(cg::thread_block_tile<TileSi
+     float deriv[3];
+     int nat = num_atom_types(ig_cuda_gpu->atu);
+     for (int i = tile.thread_rank(); i < m_cuda_gpu->m_num_movable_atoms; i += tile.num_threads()) {
+-        int t = m_cuda_gpu->atoms[i].types[ig_cuda_gpu->atu];
++        int t = receptor_grid_type(m_cuda_gpu->atoms[i].types[ig_cuda_gpu->atu], ig_cuda_gpu->atu);
+         if (t >= nat) {
+             m_cuda_gpu->minus_forces.coords[i][0] = 0.0f;
+             m_cuda_gpu->minus_forces.coords[i][1] = 0.0f;
+@@ -558,11 +558,19 @@ template <unsigned int TileSize> __device__ __forceinline__ float eval_interacti
+                       m_coords->coords[bi][2] - m_coords->coords[ai][2]};
+         float r2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
+ 
+-        if (r2 < p_cuda_gpu->m_cutoff_sqr) {
++        const bool closure = pairs->type_pair_index[i] < 0;
++        if (closure || r2 < p_cuda_gpu->m_cutoff_sqr) {
+             float tmp[2];
+-            p_eval_deriv(tmp, index, r2, p_cuda_gpu, epsilon_fl);
++            if (closure) {
++                // Exact restraint: no nonbonded cutoff, table smoothing or curl.
++                const float distance = sqrtf(r2 + 1e-6f);
++                tmp[0] = p_cuda_gpu->m_glue_weight * (distance - 1e-3f);
++                tmp[1] = p_cuda_gpu->m_glue_weight / distance;
++            } else {
++                p_eval_deriv(tmp, index, r2, p_cuda_gpu, epsilon_fl);
++            }
+             float force[3] = {r[0] * tmp[1], r[1] * tmp[1], r[2] * tmp[1]};
+-            curl(&tmp[0], force, v, epsilon_fl);
++            if (!closure) curl(&tmp[0], force, v, epsilon_fl);
+             e += tmp[0];
+             atomicAdd(&minus_forces->coords[ai][0], -force[0]);
+             atomicAdd(&minus_forces->coords[ai][1], -force[1]);
+@@ -589,11 +597,19 @@ template <unsigned int TileSize,typename Config> __device__ __forceinline__ floa
+                       m_coords->coords[bi][2] - m_coords->coords[ai][2]};
+         float r2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
+ 
+-        if (r2 < p_cuda_gpu->m_cutoff_sqr) {
++        const bool closure = pairs->type_pair_index[i] < 0;
++        if (closure || r2 < p_cuda_gpu->m_cutoff_sqr) {
+             float tmp[2];
+-            p_eval_deriv<Config>(tmp, index, r2, p_cuda_gpu, epsilon_fl);
++            if (closure) {
++                // Exact restraint: no nonbonded cutoff, table smoothing or curl.
++                const float distance = sqrtf(r2 + 1e-6f);
++                tmp[0] = p_cuda_gpu->m_glue_weight * (distance - 1e-3f);
++                tmp[1] = p_cuda_gpu->m_glue_weight / distance;
++            } else {
++                p_eval_deriv<Config>(tmp, index, r2, p_cuda_gpu, epsilon_fl);
++            }
+             float force[3] = {r[0] * tmp[1], r[1] * tmp[1], r[2] * tmp[1]};
+-            curl(&tmp[0], force, v, epsilon_fl);
++            if (!closure) curl(&tmp[0], force, v, epsilon_fl);
+             e += tmp[0];
+             atomicAdd(&minus_forces->coords[ai][0], -force[0]);
+             atomicAdd(&minus_forces->coords[ai][1], -force[1]);
+diff --git a/src/lib/atom_constants.h b/src/lib/atom_constants.h
+index 798f323..1e731bf 100644
+--- a/src/lib/atom_constants.h
++++ b/src/lib/atom_constants.h
+@@ -332,15 +332,15 @@ const fl xs_vdw_radii[] = {
+     1.2,  // Met_D
+     1.9,  // C_H_CG0
+     1.9,  // C_P_CG0
++    0.0,  // G0
+     1.9,  // C_H_CG1
+     1.9,  // C_P_CG1
++    0.0,  // G1
+     1.9,  // C_H_CG2
+     1.9,  // C_P_CG2
++    0.0,  // G2
+     1.9,  // C_H_CG3
+     1.9,  // C_P_CG3
+-    0.0,  // G0
+-    0.0,  // G1
+-    0.0,  // G2
+     0.0,  // G3
+     0.0,  // W
+     1.7,  // O_XA
+@@ -371,15 +371,15 @@ const fl xs_vinardo_vdw_radii[] = {
+     1.2,  // Met_D
+     2.0,  // C_H_CG0
+     2.0,  // C_P_CG0
++    0.0,  // G0
+     2.0,  // C_H_CG1
+     2.0,  // C_P_CG1
++    0.0,  // G1
+     2.0,  // C_H_CG2
+     2.0,  // C_P_CG2
++    0.0,  // G2
+     2.0,  // C_H_CG3
+     2.0,  // C_P_CG3
+-    0.0,  // G0
+-    0.0,  // G1
+-    0.0,  // G2
+     0.0,  // G3
+     0.0,  // W
+     1.6,  // O_XA
+diff --git a/src/lib/model.cpp b/src/lib/model.cpp
+index 21c2be5..5a2b290 100644
+--- a/src/lib/model.cpp
++++ b/src/lib/model.cpp
+@@ -640,7 +640,8 @@ void model::initialize(const distance_type_matrix& mobility) {
+ ///////////////////  end  MODEL::INITIALIZE /////////////////////////
+ 
+ sz model::num_internal_pairs() const {
+-    sz tmp = 0;
++    // Include closure restraints when selecting the GPU pair-buffer size.
++    sz tmp = glue_pairs.size();
+     VINA_FOR_IN(i, ligands)
+     tmp += ligands[i].pairs.size();
+     return tmp;
+@@ -970,9 +971,17 @@ fl model::eval_deriv(const precalculate_byatom& p, const igrid& ig, const vec& v
+         e += eval_interacting_pairs_deriv(p, v[2], other_pairs, coords,
+                                           minus_forces);  // adds to minus_forces
+     // glue_i - glue_i and glue_i - glue_j
+-    if (!glue_pairs.empty())
+-        e += eval_interacting_pairs_deriv(p, v[2], glue_pairs, coords, minus_forces,
+-                                          true);  // adds to minus_forces
++    // Closure is a geometric restraint, not a capped nonbonded interaction.
++    // Keep its force active beyond the nonbonded cutoff and near zero distance.
++    VINA_FOR_IN(i, glue_pairs) {
++        const interacting_pair& ip = glue_pairs[i];
++        const vec r = coords[ip.b] - coords[ip.a];
++        const fl distance = std::sqrt(sqr(r) + 1e-6);
++        e += p.m_glue_weight * (distance - 1e-3);
++        const vec force = (p.m_glue_weight / distance) * r;
++        minus_forces[ip.a] -= force;
++        minus_forces[ip.b] += force;
++    }
+ 
+     // calculate derivatives
+     ligands.derivative(coords, minus_forces, g.ligands);
+diff --git a/src/lib/non_cache.cpp b/src/lib/non_cache.cpp
+index 7e9a792..f188ef4 100644
+--- a/src/lib/non_cache.cpp
++++ b/src/lib/non_cache.cpp
+@@ -439,6 +439,9 @@ fl non_cache::eval_deriv(model& m, fl v) const {  // clean up
+             case XS_TYPE_G1:
+             case XS_TYPE_G2:
+             case XS_TYPE_G3:
++                // Dummy atoms have no receptor force; clear the previous
++                // evaluation before model::eval_deriv adds closure forces.
++                m.minus_forces[i].assign(0);
+                 continue;
+             case XS_TYPE_C_H_CG0:
+             case XS_TYPE_C_H_CG1:
+diff --git a/src/lib/precalculate.h b/src/lib/precalculate.h
+index 4715146..8cb5ae0 100644
+--- a/src/lib/precalculate.h
++++ b/src/lib/precalculate.h
+@@ -207,6 +207,7 @@ public:
+                         fl factor = 32) {
+         // sf should not be discontinuous, even near cutoff, for the sake of the derivatives
+         m_factor = factor;
++        m_glue_weight = sf.m_weights[sf.m_num_potentials - 1];
+         m_cutoff_sqr = sqr(sf.get_cutoff());
+         m_max_cutoff_sqr = sqr(sf.get_max_cutoff());
+         m_n = sz(m_factor * m_max_cutoff_sqr)
+@@ -244,6 +245,7 @@ public:
+                                   fl factor = 32) {
+         // sf should not be discontinuous, even near cutoff, for the sake of the derivatives
+         m_factor = factor;
++        m_glue_weight = sf.m_weights[sf.m_num_potentials - 1];
+         m_cutoff_sqr = sqr(sf.get_cutoff());
+         m_max_cutoff_sqr = sqr(sf.get_max_cutoff());
+         m_n = sz(m_factor * m_max_cutoff_sqr)
+@@ -287,6 +289,7 @@ public:
+     triangular_matrix<precalculate_element> m_data;
+ 
+     // set public for GPU
++    fl m_glue_weight = 50;
+     fl m_cutoff_sqr;
+     flv calculate_rs() const {
+         flv tmp(m_n, 0);
+diff --git a/src/lib/vina.cpp b/src/lib/vina.cpp
+index 0a55d8a..fec8643 100644
+--- a/src/lib/vina.cpp
++++ b/src/lib/vina.cpp
+@@ -1557,7 +1557,7 @@ void Vina::global_search(const int exhaustiveness, const int n_poses, const doub
+     parallelmc.mc.local_steps = unsigned((25 + m_model.num_movable_atoms()) / 3);
+     parallelmc.mc.max_evals = max_evals;
+     parallelmc.mc.min_rmsd = min_rmsd;
+-    parallelmc.mc.num_saved_mins = n_poses;
++    parallelmc.mc.num_saved_mins = n_poses > 1 ? std::max(n_poses, 20) : n_poses;
+     parallelmc.mc.hunt_cap = vec(10, 10, 10);
+     parallelmc.num_tasks = exhaustiveness;
+     parallelmc.num_threads = m_cpu;
+@@ -1735,7 +1735,7 @@ void Vina::global_search_gpu(const int exhaustiveness, const int n_poses, const
+     // DEBUG_PRINTF("final mc.global_steps = %u\n", mc.global_steps);
+     mc.max_evals = max_evals;
+     mc.min_rmsd = min_rmsd;
+-    mc.num_saved_mins = n_poses;
++    mc.num_saved_mins = n_poses > 1 ? std::max(n_poses, 20) : n_poses;
+     mc.hunt_cap = vec(10, 10, 10);
+     mc.threads_per_ligand = exhaustiveness;
+     mc.num_of_ligands = num_of_ligands;
+@@ -1790,7 +1790,8 @@ void Vina::global_search_gpu(const int exhaustiveness, const int n_poses, const
+                     m_non_cache = m_non_cache_tmp;
+                     m_non_cache.slope = slope;
+                     quasi_newton_par.max_steps
+-                        = unsigned((25 + m_model_gpu[l].num_movable_atoms()) / 3);
++                        = m_model_gpu[l].get_glue_pairs().empty()
++                            ? unsigned((25 + m_model_gpu[l].num_movable_atoms()) / 3) : 200;
+                     VINA_FOR_IN(i, poses) {
+                         // DEBUG_PRINTF("poses i score=%lf\n", poses[i].e);
+                         const fl slope_orig = m_non_cache.slope;
+diff --git a/src/lib/vina.h b/src/lib/vina.h
+index e64fad2..2ff7124 100644
+--- a/src/lib/vina.h
++++ b/src/lib/vina.h
+@@ -205,7 +205,7 @@ public:
+     // DEBUG_PRINTF("final mc.global_steps = %u\n", mc.global_steps);
+     mc.max_evals = max_evals;
+     mc.min_rmsd = min_rmsd;
+-    mc.num_saved_mins = n_poses;
++    mc.num_saved_mins = n_poses > 1 ? std::max(n_poses, 20) : n_poses;
+     mc.hunt_cap = vec(10, 10, 10);
+     mc.threads_per_ligand = exhaustiveness;
+     mc.num_of_ligands = num_of_ligands;
+@@ -255,7 +255,8 @@ public:
+                     m_non_cache = m_non_cache_tmp;
+                     m_non_cache.slope = slope;
+                     quasi_newton_par.max_steps
+-                        = unsigned((25 + m_model_gpu[l].num_movable_atoms()) / 3);
++                        = m_model_gpu[l].get_glue_pairs().empty()
++                            ? unsigned((25 + m_model_gpu[l].num_movable_atoms()) / 3) : 200;
+                     VINA_FOR_IN(i, poses) {
+                         // The GPU kernel's cuda_to_vina does not populate c.flex.
+                         // Initialize it from the model so model.set(c) doesn't crash.
+diff --git a/src/main/main.cpp b/src/main/main.cpp
+index 436155c..bdf607d 100644
+--- a/src/main/main.cpp
++++ b/src/main/main.cpp
+@@ -660,6 +660,10 @@ bug reporting, license agreements, and more information.      \n";
+             max_step = 40;
+         }
+ 
++        // Each GPU trajectory contributes one candidate. Never request fewer
++        // trajectories than output poses, even when a search preset is used.
++        exhaustiveness = std::max(exhaustiveness, num_modes);
++
+         // Use multiple workers for 1:1 docking, and exit
+         if (paired_batch_size > 0) {
+             if (0 == vm.count("ligand_index")) {

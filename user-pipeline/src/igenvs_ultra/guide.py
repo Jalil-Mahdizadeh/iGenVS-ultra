@@ -231,10 +231,8 @@ def pipeline_arguments(pipeline: str) -> list[str]:
         poses = choose("Save poses", (("merged", "Combined poses.pdbqt and poses.sdf files"), ("none", "Scores only"),
                                      ("individual", "Separate PDBQT and SDF files per molecule")), "merged")
         arguments += ["--pose-output", poses]
-        if poses != "none" and engine == "unidock":
-            arguments += ["--num-modes", ask("Maximum poses per molecule", "1", count_value)]
-        elif poses != "none":
-            print("AutoDock-GPU saves one best pose per molecule.")
+        if poses != "none":
+            arguments += ["--num-modes", ask("Poses per molecule (unfiltered)", "1", count_value)]
     else:
         def threshold(value: str) -> str:
             if value and not 0 <= float(value) <= 1:
@@ -438,7 +436,7 @@ def show_summary(args: argparse.Namespace, argv: list[str], plan: dict, readines
     if args.command == "dock":
         field("Engine", args.engine)
         field("Preset", args.search_mode)
-        field("Poses", f"{args.pose_output}; max poses: {args.num_modes}")
+        field("Poses", f"{args.pose_output}; requested poses: {args.num_modes}")
         print("Every admitted molecule will be physically docked.")
     elif args.command == "run":
         total = plan["fit"]["reference_docking_rows"] + plan["fit"]["al_docking_rows"]

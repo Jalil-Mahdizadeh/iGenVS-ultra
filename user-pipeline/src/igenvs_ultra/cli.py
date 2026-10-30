@@ -96,8 +96,10 @@ def add_docking_arguments(parser: argparse.ArgumentParser, *, regular: bool = Fa
         default="balance" if regular else "fast",
     )
     group.add_argument("--scoring", choices=("auto", "vina", "vinardo", "ad4"), default="auto")
-    group.add_argument("--num-modes", type=positive_int, default=1)
-    group.add_argument("--energy-range", type=float, default=3.0)
+    group.add_argument("--num-modes", type=positive_int, default=1,
+                       help="Requested poses per molecule, without energy or RMSD filtering.")
+    group.add_argument("--energy-range", type=float, default=3.0,
+                       help="Legacy option; ignored. Pose output has no energy cutoff.")
     group.add_argument("--refine-step", type=positive_int, default=3)
     group.add_argument("--no-refine", action="store_true")
     group.add_argument("--unidock-verbosity", type=int, choices=(0, 1, 2), default=0)

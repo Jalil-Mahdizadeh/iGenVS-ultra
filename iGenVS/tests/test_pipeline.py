@@ -7,8 +7,10 @@ from igenvs.pipeline import (
     _first_preparation_batch_size,
     _preparation_batches,
     _require_successful_docking,
+    _result_rows,
+    _failure_row,
 )
-from igenvs.records import ValidatedRecord
+from igenvs.records import DockingResult, PreparedLigand, PreparationFailure, ValidatedRecord
 
 
 def _records(count: int):
@@ -82,3 +84,21 @@ def test_total_docking_engine_failure_is_not_success() -> None:
         )
     _require_successful_docking({"prepared": 3, "docked": 1})
     _require_successful_docking({"prepared": 0, "docked": 0})
+
+
+def test_results_include_every_pose_score_and_one_row_per_failure(tmp_path) -> None:
+    record = next(_records(1))
+    ligand = PreparedLigand(record, tmp_path / "ligand.pdbqt", 1, 0, 0.1)
+    result = DockingResult(ligand, "success", (-7.5, 2.0, 12.0), ligand.path, "", 0.5)
+    rows = list(_result_rows(result, 1, "poses.pdbqt#1", engine="unidock", scoring="vina"))
+    assert [row["pose_rank"] for row in rows] == [1, 2, 3]
+    assert [row["docking_score"] for row in rows] == ["-7.500000", "2.000000", "12.000000"]
+    assert all(row["num_poses"] == 3 and row["source_row"] == 1 for row in rows)
+    assert all(row["pose_ref"] == "poses.pdbqt#1" for row in rows)
+    failed = DockingResult(ligand, "invalid_output", (), None, "broken ring", 0.5)
+    rows = list(_result_rows(failed, 1, "", engine="unidock", scoring="vina"))
+    assert len(rows) == 1 and rows[0]["num_poses"] == 0
+    assert rows[0]["pose_rank"] == rows[0]["docking_score"] == ""
+    row = _failure_row(PreparationFailure(record, "preparation_failed", "embedding", 0.1),
+                       1, engine="unidock", scoring="vina")
+    assert row["pose_rank"] == row["docking_score"] == ""

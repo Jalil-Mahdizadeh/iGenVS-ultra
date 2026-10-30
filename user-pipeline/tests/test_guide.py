@@ -113,10 +113,11 @@ class GuideTests(unittest.TestCase):
         for preset in ("fast", "balance", "detail"):
             with self.subTest(preset=preset), mock.patch("builtins.input", side_effect=[
                 "complex", str(COMPLEX), "generate", "1,000", "", "autodock-gpu", preset, "individual",
+                "3",
             ]):
                 args = guide.parsed_arguments(["dock", *guide.pipeline_arguments("dock"), "--output-dir", str(self.job)])
             self.assertEqual((args.engine, args.search_mode, args.pose_output, args.num_modes),
-                             ("autodock-gpu", preset, "individual", 1))
+                             ("autodock-gpu", preset, "individual", 3))
             self.assertEqual(args.generate_count, 1000)
 
     def test_generation_offers_all_four_models_and_keeps_pipeline_defaults(self):

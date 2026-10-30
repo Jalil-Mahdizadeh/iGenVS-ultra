@@ -8,13 +8,17 @@ Stage: build
     third_party/AutoGrid /src/autogrid
     containers/patches/unidock-1.2.0-respect-max-gpu-memory.patch /src/unidock.patch
     containers/patches/unidock-1.2.0-scores-only-output.patch /src/unidock-scores.patch
+    containers/patches/unidock-1.2.0-ring-closure-and-poses.patch /src/unidock-rings.patch
 
 %post
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends ca-certificates cmake g++ git make meson ninja-build patch tcsh libboost-system-dev libboost-thread-dev libboost-serialization-dev libboost-filesystem-dev libboost-program-options-dev libboost-timer-dev libgomp1
+    sed -i 's/\r$//' /src/unidock.patch /src/unidock-scores.patch /src/unidock-rings.patch
+    find /src/unidock/src -type f -exec sed -i 's/\r$//' {} +
     patch -d /src/unidock -p1 < /src/unidock.patch
     patch -l -d /src/unidock -p1 < /src/unidock-scores.patch
+    patch -l -d /src/unidock -p1 < /src/unidock-rings.patch
     cmake -S /src/unidock -B /tmp/unidock-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=90 -DCMAKE_INSTALL_PREFIX=/opt/unidock
     cmake --build /tmp/unidock-build --target unidock --parallel 8
     cmake --install /tmp/unidock-build --component Unspecified
@@ -109,7 +113,7 @@ Stage: final
     org.opencontainers.image.description "iGen3 + RDKit/Meeko + Uni-Dock 1.2.0 + AutoDock-GPU 1.6 virtual screening"
     igenvs.unidock.version 1.2.0
     igenvs.unidock.commit 95e409172b15dec0989aea70b0f2328e8ca52025
-    igenvs.unidock.patch "respect-max-gpu-memory,scores-only-output"
+    igenvs.unidock.patch "respect-max-gpu-memory,scores-only-output,ring-closure-and-poses"
     igenvs.autodock-gpu.version 1.6
     igenvs.autodock-gpu.commit e63e6f6280ebfad18caa3e8f48afdc269e79e063
     igenvs.autodock-gpu.work-items "64,128,256"

@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from itertools import groupby
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional, Sequence
@@ -1483,6 +1484,35 @@ def _regular_docking_shard_plan(
     return plan
 
 
+def _docking_result_groups(rows: Iterable[dict[str, str]]) -> Iterator[list[dict[str, str]]]:
+    """Stream complete pose groups, accepting the legacy one-row schema too."""
+    previous_source = 0
+    for source_row, entries in groupby(rows, key=lambda row: int(row["source_row"])):
+        group = list(entries)
+        first = group[0]
+        if source_row <= previous_source:
+            raise PipelineError("docking results contain duplicate/out-of-order source rows")
+        previous_source = source_row
+        if "pose_rank" in first:
+            count = int(first["num_poses"])
+            success = first["status"] == "success"
+            ranks = [str(rank) for rank in range(1, count + 1)] if success else [""]
+            if (
+                (success and count < 1)
+                or (not success and count != 0)
+                or [row["pose_rank"] for row in group] != ranks
+                or any(
+                    (row["molecule_id"], row["status"], row["num_poses"])
+                    != (first["molecule_id"], first["status"], first["num_poses"])
+                    for row in group
+                )
+            ):
+                raise PipelineError(f"incomplete or inconsistent pose rows for source row {source_row}")
+        elif len(group) != 1:
+            raise PipelineError("legacy docking results contain duplicate source rows")
+        yield group
+
+
 def _regular_results_cover_validated(results: Path, validated: Path) -> bool:
     """Check the ordered source-row contract without materializing either CSV."""
 
@@ -1496,14 +1526,15 @@ def _regular_results_cover_validated(results: Path, validated: Path) -> bool:
                 validated_reader.fieldnames or []
             ):
                 return False
+            groups = _docking_result_groups(result_reader)
             while True:
-                result_row = next(result_reader, None)
+                result_group = next(groups, None)
                 validated_row = next(validated_reader, None)
-                if result_row is None or validated_row is None:
-                    return result_row is None and validated_row is None
-                if int(result_row["source_row"]) != int(validated_row["source_row"]):
+                if result_group is None or validated_row is None:
+                    return result_group is None and validated_row is None
+                if int(result_group[0]["source_row"]) != int(validated_row["source_row"]):
                     return False
-    except (OSError, TypeError, ValueError, KeyError, csv.Error):
+    except (OSError, TypeError, ValueError, KeyError, csv.Error, PipelineError):
         return False
 
 
@@ -1685,7 +1716,7 @@ def _merge_regular_docking_shards(
     readers = []
     handles = []
     fields: Optional[list[str]] = None
-    heap: list[tuple[int, int, dict[str, str], Any]] = []
+    heap: list[tuple[int, int, list[dict[str, str]], Any]] = []
     temporary = output / "results.csv.partial"
     merged_rows = 0
     expected_path = validated
@@ -1706,10 +1737,11 @@ def _merge_regular_docking_shards(
                 fields = current_fields
             elif current_fields != fields:
                 raise PipelineError("regular docking shard result schemas differ")
-            readers.append(reader)
-            row = next(reader, None)
-            if row is not None:
-                heapq.heappush(heap, (int(row["source_row"]), shard, row, reader))
+            groups = _docking_result_groups(reader)
+            readers.append(groups)
+            group = next(groups, None)
+            if group is not None:
+                heapq.heappush(heap, (int(group[0]["source_row"]), shard, group, groups))
         if fields is None:
             raise PipelineError("regular docking shards produced no result schema")
         last_source_row = 0
@@ -1717,7 +1749,7 @@ def _merge_regular_docking_shards(
             writer = csv.DictWriter(handle, fieldnames=fields)
             writer.writeheader()
             while heap:
-                source_row, shard, row, reader = heapq.heappop(heap)
+                source_row, shard, group, reader = heapq.heappop(heap)
                 if source_row <= last_source_row:
                     raise PipelineError("regular docking shards contain duplicate/out-of-order source rows")
                 if expected_reader is not None:
@@ -1726,14 +1758,14 @@ def _merge_regular_docking_shards(
                         raise PipelineError(
                             "regular docking shards do not exactly cover the validated library"
                         )
-                writer.writerow(row)
+                writer.writerows(group)
                 last_source_row = source_row
                 merged_rows += 1
                 following = next(reader, None)
                 if following is not None:
                     heapq.heappush(
                         heap,
-                        (int(following["source_row"]), shard, following, reader),
+                        (int(following[0]["source_row"]), shard, following, reader),
                     )
             if expected_reader is not None and next(expected_reader, None) is not None:
                 raise PipelineError(
@@ -2427,7 +2459,10 @@ def merge_docking(
                 raw_fields = current_fields
             elif current_fields != raw_fields:
                 raise PipelineError("docking shard result schemas differ")
-            for row in reader:
+            for group in _docking_result_groups(reader):
+                # Training labels remain one best score per molecule; all
+                # pose scores are retained in each shard's results.csv.
+                row = group[0]
                 index = int(row["source_row"]) - 1
                 if index < 0 or index >= len(rows) or rows[index] is not None:
                     raise PipelineError(f"invalid/duplicate source row in docking shards: {index + 1}")

@@ -87,7 +87,7 @@ enter them; CSV/TSV headers are shown for SMILES and ID column selection.
 
 | Workflow | Questions specific to this workflow |
 | --- | --- |
-| `dock` | External library or generated molecule count and iGen3 model; Uni-Dock or AutoDock-GPU; `fast`, `balance`, or `detail`; PDBQT/SDF pose files and maximum poses per molecule (Uni-Dock). |
+| `dock` | External library or generated molecule count and iGen3 model; Uni-Dock or AutoDock-GPU; `fast`, `balance`, or `detail`; PDBQT/SDF pose files and requested poses per molecule. |
 | `run` | AL rounds from 0 to 5; final library or generated count and iGen3 model; optional minimum ensemble score from 0 to 1 (blank saves all). |
 | `rl-train` | Target and output folder. The frozen training stages control the scientific settings. |
 
@@ -171,8 +171,21 @@ includes a `.pdbqt`/`.sdf` pair per molecule. The SDF export uses
 [Meeko](https://meeko.readthedocs.io/en/develop/export_usage.html) to retain
 the input chemistry and docked coordinates. It runs after docking, including
 after a resume when SDF files are missing; existing docking results are reused.
-Uni-Dock exports every saved pose; AutoDock-GPU currently saves one best pose
-per molecule. Scores-only mode creates neither pose format.
+Uni-Dock requests exactly `--num-modes` poses per successfully docked molecule,
+with no energy-window or RMSD-similarity filtering. Similar poses can therefore
+be returned. The legacy `--energy-range` option is accepted but ignored.
+Incomplete pose counts or broken ring closures are reported as failed results,
+never silently exported as successful molecules with fewer poses. AutoDock-GPU
+also supports `--num-modes`: it saves the requested number of best run results,
+ranked by AD4 binding energy, without clustering or energy-window filtering.
+Its preset run count increases automatically if more poses are requested;
+an explicit `--adgpu-runs` must be at least `--num-modes`.
+Scores-only mode creates neither pose format.
+`docking/results.csv` contains one row per pose, including its `pose_rank`
+(starting at 1) and `docking_score`. `num_poses` repeats the molecule's total;
+the `pose_ref` and rank together identify its coordinates. Failed molecules
+have one row with blank rank/score and zero poses. Job counts remain molecule
+counts. This pose-level CSV also applies when coordinate output is disabled.
 Uni-Dock and AutoDock-GPU, generation, CSV/SMI parsing, validation,
 deduplication, preparation, batch profiles, manual shards, scratch, and pose
 options are exposed by `igenvs-ultra dock --help`.
@@ -207,7 +220,7 @@ The regular outputs remain native iGenVS outputs:
 ```text
 runs/my-regular-docking/
   target/                    reusable prepared target
-  docking/results.csv        terminal result for every admitted molecule
+  docking/results.csv        every pose's rank and score; one row per failed molecule
   docking/poses.pdbqt        merged poses (with the default pose policy)
   docking/poses.sdf          the same poses as SDF molecules
   docking/manifest.json      protocol, counts, timings, hardware, and paths

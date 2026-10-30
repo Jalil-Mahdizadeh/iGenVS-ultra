@@ -76,6 +76,7 @@ def test_autodock_gpu_command_uses_v16_batch_contract(tmp_path: Path) -> None:
     assert command[command.index("--dlgoutput") + 1] == "0"
     assert command[command.index("--clustering") + 1] == "0"
     assert command[command.index("--gbest") + 1] == "0"
+    assert command[command.index("--npdb") + 1] == "0"
 
 
 @pytest.mark.parametrize(
@@ -110,6 +111,9 @@ def test_xml_parser_returns_best_finite_ad4_score(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert parse_autodock_gpu_xml(output) == (-8.5,)
+    assert parse_autodock_gpu_xml(output, 2) == (-8.5, -7.25)
+    with pytest.raises(ValueError, match="requested 3 poses"):
+        parse_autodock_gpu_xml(output, 3)
 
     output.write_text(
         "<autodock_gpu><runs><run><free_NRG_binding>nan"
@@ -120,13 +124,13 @@ def test_xml_parser_returns_best_finite_ad4_score(tmp_path: Path) -> None:
         parse_autodock_gpu_xml(output)
 
 
-def test_best_pose_and_xml_paths_are_unambiguous(tmp_path: Path) -> None:
+def test_pose_and_xml_paths_are_unambiguous(tmp_path: Path) -> None:
     ligand = _ligand(tmp_path)
     output_dir = tmp_path / "outputs"
     assert autodock_gpu_xml_path(ligand, output_dir) == output_dir / "lig_0001.xml"
     assert (
         autodock_gpu_pose_path(ligand, output_dir)
-        == output_dir / "lig_0001-best.pdbqt"
+        == output_dir / "lig_0001-poses.pdbqt"
     )
 
 
@@ -157,7 +161,7 @@ def test_multiple_workers_split_filelists_and_collect_all_outputs(
         output_dir.mkdir(parents=True)
         for ligand in group:
             autodock_gpu_xml_path(ligand, output_dir).write_text(
-                "<autodock_gpu><runs><run><free_NRG_binding>-7.5"
+                '<autodock_gpu><runs><run id="1"><free_NRG_binding>-7.5'
                 "</free_NRG_binding></run></runs></autodock_gpu>",
                 encoding="utf-8",
             )
@@ -237,3 +241,42 @@ def test_multiple_workers_require_explicit_mps_pipe(
             work_dir=tmp_path,
             label="batch",
         )
+
+
+def test_pose_count_controls_runs_and_retains_unclustered_coordinates(tmp_path: Path) -> None:
+    config = _config(tmp_path, num_modes=3)
+    command = build_autodock_gpu_command(config=config, filelist_path=tmp_path / "batch.txt")
+    assert command[command.index("--npdb") + 1] == "1"
+    assert command[command.index("--clustering") + 1] == "0"
+    assert resolved_autodock_gpu_runs(_config(tmp_path, num_modes=25)) == 25
+    with pytest.raises(ValueError, match="at least"):
+        resolved_autodock_gpu_runs(_config(tmp_path, num_modes=3, autodock_gpu_runs=2))
+
+    ligand = _ligand(tmp_path)
+    output = tmp_path / "outputs"
+    output.mkdir()
+    filelist = tmp_path / "batch.txt"
+    backend._write_filelist([ligand], config=config, filelist_path=filelist, output_dir=output)
+    assert Path(filelist.read_text().splitlines()[1]) == output / ligand.path.name
+    autodock_gpu_xml_path(ligand, output).write_text(
+        '<autodock_gpu><runs>'
+        '<run id="1"><free_NRG_binding>11</free_NRG_binding></run>'
+        '<run id="2"><free_NRG_binding>-7.5</free_NRG_binding></run>'
+        '<run id="3"><free_NRG_binding>4</free_NRG_binding></run>'
+        '</runs></autodock_gpu>'
+    )
+    for run in (1, 2, 3):
+        (output / f"{ligand.path.stem}_docked_run{run}_entity1.pdbqt").write_text(
+            f"ATOM      1  C   UNL     1    {float(run):8.3f}{0.:8.3f}{0.:8.3f}  1.00  0.00     0.000 C\n"
+        )
+    results, missing = backend._collect_outputs([ligand], config=config, output_dir=output, seconds=1)
+    assert not missing and results[0].status == "success"
+    assert results[0].scores == (-7.5, 4., 11.)
+    text = results[0].pose_path.read_text()
+    assert [line for line in text.splitlines() if line.startswith("REMARK AUTODOCK_GPU")] == [
+        f"REMARK AUTODOCK_GPU RUN_ID {run}" for run in (2, 3, 1)
+    ]
+    assert [float(line[30:38]) for line in text.splitlines() if line.startswith("ATOM")] == [2., 3., 1.]
+    (output / f"{ligand.path.stem}_docked_run3_entity1.pdbqt").unlink()
+    results, missing = backend._collect_outputs([ligand], config=config, output_dir=output, seconds=1)
+    assert not results and missing == [ligand]

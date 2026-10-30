@@ -79,6 +79,10 @@ def export_poses(docking_dir: Path, pose_output: str) -> dict:
             for row in csv.DictReader(handle):
                 if row["status"] != "success" or not row["pose_ref"]:
                     continue
+                # Each ligand file already contains every pose. Export it once
+                # even though results.csv now has one row per pose.
+                if row.get("pose_rank", "1") != "1":
+                    continue
                 source = (docking_dir / row["pose_ref"]).resolve()
                 if source.parent != destination.resolve() or source.suffix != ".pdbqt":
                     raise ValueError(f"individual pose is outside the poses folder: {source}")

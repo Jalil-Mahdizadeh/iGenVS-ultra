@@ -206,21 +206,19 @@ def _inferred_element(atom: _PDBAtom) -> str:
 
 
 def _reference_coordinates(atoms: Iterable[_PDBAtom]) -> list[tuple[float, float, float]]:
-    alternatives: dict[str, list[_PDBAtom]] = {}
+    alternatives: dict[tuple[tuple[str, str, int, str], str], list[_PDBAtom]] = {}
     for atom in atoms:
-        alternatives.setdefault(atom.atom_name, []).append(atom)
+        alternatives.setdefault((atom.residue_key, atom.atom_name), []).append(atom)
     selected: list[_PDBAtom] = []
     for variants in alternatives.values():
-        selected.append(
-            max(
-                variants,
-                key=lambda atom: (
-                    atom.altloc == "",
-                    atom.occupancy,
-                    atom.altloc == "A",
-                ),
-            )
-        )
+        # Some exporters use element names for every atom (C, N, O). Blank
+        # altloc records are distinct atoms, not alternate conformations.
+        primary = [atom for atom in variants if not atom.altloc]
+        if primary:
+            selected.extend(primary)
+        else:
+            preferred = max(variants, key=lambda atom: (atom.occupancy, atom.altloc == "A"))
+            selected.extend(atom for atom in variants if atom.altloc == preferred.altloc)
     coordinates = [
         atom.coordinates
         for atom in selected

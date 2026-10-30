@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,7 @@ from typing import Sequence
 
 from .docking import DockInvocation, DockingConfig
 from .records import DockingResult, PreparedLigand
+from .pose_validation import validate_ring_closures
 
 
 AUTODOCK_GPU_RUNS_BY_MODE = {
@@ -33,7 +35,11 @@ def resolved_autodock_gpu_runs(config: DockingConfig) -> int:
         raise ValueError(f"unsupported AutoDock-GPU search mode: {config.search_mode}")
     if not 1 <= runs <= 8192:
         raise ValueError("AutoDock-GPU runs must be between 1 and 8192")
-    return runs
+    if not 1 <= config.num_modes <= 8192:
+        raise ValueError("AutoDock-GPU pose count must be between 1 and 8192")
+    if config.autodock_gpu_runs is not None and runs < config.num_modes:
+        raise ValueError("AutoDock-GPU runs must be at least the requested pose count")
+    return max(runs, config.num_modes)
 
 
 def autodock_gpu_output_stem(ligand: PreparedLigand, output_dir: Path) -> Path:
@@ -46,11 +52,11 @@ def autodock_gpu_xml_path(ligand: PreparedLigand, output_dir: Path) -> Path:
 
 def autodock_gpu_pose_path(ligand: PreparedLigand, output_dir: Path) -> Path:
     stem = autodock_gpu_output_stem(ligand, output_dir)
-    return stem.parent / f"{stem.name}-best.pdbqt"
+    return stem.parent / f"{stem.name}-poses.pdbqt"
 
 
-def parse_autodock_gpu_xml(path: Path) -> tuple[float, ...]:
-    """Return the best finite AD4 binding energy from an AD-GPU XML result."""
+def _ranked_autodock_gpu_runs(path: Path, num_modes: int) -> list[tuple[int, float]]:
+    """Rank run results by AD4 binding energy, retaining their coordinate IDs."""
 
     try:
         root = ET.parse(path).getroot()
@@ -58,20 +64,55 @@ def parse_autodock_gpu_xml(path: Path) -> tuple[float, ...]:
         raise ValueError("output is not well-formed AutoDock-GPU XML") from exc
     if root.tag != "autodock_gpu":
         raise ValueError("output root is not autodock_gpu")
-    raw_scores = [
-        node.text.strip()
-        for node in root.findall("./runs/run/free_NRG_binding")
-        if node.text and node.text.strip()
-    ]
-    if not raw_scores:
+    nodes = root.findall("./runs/run")
+    if not nodes:
         raise ValueError("output contains no free_NRG_binding scores")
-    try:
-        scores = tuple(float(value) for value in raw_scores)
-    except ValueError as exc:
-        raise ValueError("output contains a non-numeric docking score") from exc
-    if not all(math.isfinite(score) for score in scores):
-        raise ValueError("output contains a non-finite docking score")
-    return (min(scores),)
+    runs = []
+    seen = set()
+    for node in nodes:
+        try:
+            score = float(node.findtext("free_NRG_binding", ""))
+        except ValueError as exc:
+            raise ValueError("output contains a non-numeric docking score") from exc
+        if not math.isfinite(score):
+            raise ValueError("output contains a non-finite docking score")
+        try:
+            run_id = int(node.attrib["id"])
+        except (KeyError, ValueError) as exc:
+            raise ValueError("output contains an invalid run ID") from exc
+        if run_id < 1 or run_id in seen:
+            raise ValueError("output contains an invalid or duplicate run ID")
+        seen.add(run_id)
+        runs.append((run_id, score))
+    if num_modes < 1 or len(runs) < num_modes:
+        raise ValueError(f"requested {num_modes} poses but AutoDock-GPU returned {len(runs)} runs")
+    return sorted(runs, key=lambda run: (run[1], run[0]))[:num_modes]
+
+
+def parse_autodock_gpu_xml(path: Path, num_modes: int = 1) -> tuple[float, ...]:
+    return tuple(score for _, score in _ranked_autodock_gpu_runs(path, num_modes))
+
+
+def _write_ranked_poses(
+    ligand: PreparedLigand, output_dir: Path, runs: Sequence[tuple[int, float]],
+) -> Path:
+    """Join run coordinates in exactly the same order as CSV pose scores."""
+    models = []
+    for rank, (run_id, score) in enumerate(runs, 1):
+        source = output_dir / f"{ligand.path.stem}_docked_run{run_id}_entity1.pdbqt"
+        text = source.read_text(encoding="utf-8")
+        if not any(line.startswith(("ATOM  ", "HETATM")) for line in text.splitlines()):
+            raise ValueError(f"AutoDock-GPU run {run_id} has no atom coordinates")
+        # Meeko recognizes native AutoDock energy remarks in multi-model PDBQT.
+        models.append(
+            f"MODEL {rank}\nREMARK AUTODOCK_GPU RUN_ID {run_id}\n"
+            f"USER    Estimated Free Energy of Binding    = {score:.6f} kcal/mol\n"
+            f"{text.rstrip()}\nENDMDL\n"
+        )
+    destination = autodock_gpu_pose_path(ligand, output_dir)
+    destination.write_text("".join(models), encoding="utf-8")
+    validate_ring_closures(ligand.path, destination)
+    return destination
 
 
 def build_autodock_gpu_command(
@@ -123,6 +164,8 @@ def build_autodock_gpu_command(
         "--clustering",
         "0",
         "--gbest",
+        "0",
+        "--npdb",
         "0" if config.scores_only_output else "1",
     ]
     if config.autodock_gpu_evaluations is not None:
@@ -141,9 +184,15 @@ def _write_filelist(
         raise ValueError("AutoDock-GPU requires a .maps.fld grid descriptor")
     lines = [str(config.autodock_gpu_fld.resolve())]
     for ligand in ligands:
+        source = ligand.path.resolve()
+        if not config.scores_only_output:
+            # --npdb writes beside the input ligand. Keep all run files inside
+            # this invocation's scratch directory, including on a retry.
+            source = output_dir / ligand.path.name
+            shutil.copyfile(ligand.path, source)
         lines.extend(
             [
-                str(ligand.path.resolve()),
+                str(source.resolve()),
                 str(autodock_gpu_output_stem(ligand, output_dir).resolve()),
             ]
         )
@@ -212,14 +261,19 @@ def _collect_outputs(
             if config.scores_only_output
             else autodock_gpu_pose_path(ligand, output_dir)
         )
-        if not xml_path.is_file() or (pose_path is not None and not pose_path.is_file()):
+        if not xml_path.is_file():
             missing.append(ligand)
             continue
         try:
-            scores = parse_autodock_gpu_xml(xml_path)
+            runs = _ranked_autodock_gpu_runs(xml_path, config.num_modes)
+            scores = tuple(score for _, score in runs)
+            if pose_path is not None:
+                pose_path = _write_ranked_poses(ligand, output_dir, runs)
             results.append(
                 DockingResult(ligand, "success", scores, pose_path, "", seconds)
             )
+        except FileNotFoundError:
+            missing.append(ligand)
         except Exception as exc:
             results.append(
                 DockingResult(

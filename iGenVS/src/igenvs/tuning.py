@@ -90,8 +90,10 @@ def tune_docking(config: TuningConfig) -> dict[str, Any]:
     if config.engine == "autodock-gpu":
         if autodock_gpu_fld is None or not autodock_gpu_fld.is_file():
             raise InputError("AutoDock-GPU tuning requires an existing .maps.fld grid")
-        if config.num_modes != 1:
-            raise InputError("AutoDock-GPU currently emits exactly one best pose")
+        if not 1 <= config.num_modes <= 8192:
+            raise InputError("AutoDock-GPU pose count must be between 1 and 8192")
+        if config.autodock_gpu_runs is not None and config.autodock_gpu_runs < config.num_modes:
+            raise InputError("AutoDock-GPU runs must be at least the requested pose count")
         if not 1 <= config.autodock_gpu_workers <= 64:
             raise InputError("AutoDock-GPU worker count must be between 1 and 64")
     elif config.autodock_gpu_workers != 1:

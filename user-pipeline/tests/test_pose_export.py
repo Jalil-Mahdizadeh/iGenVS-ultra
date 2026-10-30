@@ -27,6 +27,20 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class ExportRecoveryTests(unittest.TestCase):
+    def test_individual_export_reads_each_multimodel_file_once(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "poses").mkdir()
+            (root / "poses/ligand.pdbqt").write_text("three saved poses")
+            (root / "results.csv").write_text(
+                "molecule_id,status,pose_rank,pose_ref\n"
+                + "".join(f"ligand,success,{rank},poses/ligand.pdbqt\n" for rank in (1, 2, 3))
+            )
+            with mock.patch.object(pose_export, "sdf_string", return_value=("SDF\n", 3)) as export:
+                report = pose_export.export_poses(root, "individual")
+            export.assert_called_once_with("ligand", "three saved poses")
+            self.assertEqual((report["molecules"], report["poses"]), (1, 3))
+
     def test_merged_reader_keeps_multiple_models_inside_each_ligand(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "poses.pdbqt"

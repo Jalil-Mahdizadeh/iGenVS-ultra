@@ -12,6 +12,7 @@ from time import perf_counter
 from typing import Sequence
 
 from .errors import ExternalToolError
+from .pose_validation import validate_ring_closures
 from .records import DockingResult, PreparedLigand
 
 
@@ -109,7 +110,9 @@ def build_unidock_command(
         "--num_modes",
         str(config.num_modes),
         "--energy_range",
-        str(config.energy_range),
+        "inf",
+        "--min_rmsd",
+        "0",
         "--refine_step",
         str(config.refine_step),
         "--seed",
@@ -125,7 +128,7 @@ def build_unidock_command(
         raise ValueError("Uni-Dock verbosity must be 0, 1, or 2")
     if config.no_refine:
         command.append("--no_refine")
-    if config.scores_only_output:
+    if config.scores_only_output and config.num_modes == 1:
         if score_path is None:
             raise ValueError("score_path is required for scores-only output")
         command.extend(["--scores_only_output", "--score_file", str(score_path)])
@@ -149,7 +152,10 @@ def invoke_unidock(
     index_path.write_text("\n".join(str(ligand.path.resolve()) for ligand in ligands) + "\n", encoding="utf-8")
     stdout_path = work_dir / f"{label}.stdout.log"
     stderr_path = work_dir / f"{label}.stderr.log"
-    score_path = work_dir / f"{label}.scores.tsv" if config.scores_only_output else None
+    score_path = (
+        work_dir / f"{label}.scores.tsv"
+        if config.scores_only_output and config.num_modes == 1 else None
+    )
     command = build_unidock_command(
         ligands,
         config=config,
@@ -175,6 +181,7 @@ def _collect_outputs(
     *,
     output_dir: Path,
     seconds: float,
+    num_modes: int,
 ) -> tuple[list[DockingResult], list[PreparedLigand]]:
     results: list[DockingResult] = []
     missing: list[PreparedLigand] = []
@@ -185,6 +192,9 @@ def _collect_outputs(
             continue
         try:
             scores = parse_pdbqt_scores(output_path)
+            if len(scores) != num_modes:
+                raise ValueError(f"requested {num_modes} poses but Uni-Dock returned {len(scores)}")
+            validate_ring_closures(ligand.path, output_path)
             results.append(DockingResult(ligand, "success", scores, output_path, "", seconds))
         except Exception as exc:
             results.append(
@@ -228,11 +238,14 @@ def _collect_invocation_outputs(
     work_dir: Path,
     label: str,
 ) -> tuple[list[DockingResult], list[PreparedLigand]]:
-    if not config.scores_only_output:
+    # The compact engine table contains only the best score. For multiple
+    # requested poses, collect all models even when coordinates aren't saved.
+    if not config.scores_only_output or config.num_modes > 1:
         return _collect_outputs(
             ligands,
             output_dir=work_dir / f"{label}_outputs",
             seconds=invocation.seconds,
+            num_modes=config.num_modes,
         )
     if invocation.score_path is None:
         return [], list(ligands)

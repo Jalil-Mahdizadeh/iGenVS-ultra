@@ -174,6 +174,8 @@ def test_autodock_gpu_expert_mode_resolves_ad4_backend() -> None:
             "0",
             "--adgpu-workers",
             "4",
+            "--num-modes",
+            "3",
             "--output-dir",
             "output",
         ]
@@ -185,6 +187,7 @@ def test_autodock_gpu_expert_mode_resolves_ad4_backend() -> None:
     assert config.autodock_gpu_runs is None
     assert config.autodock_gpu_autostop is True
     assert config.autodock_gpu_workers == 4
+    assert config.num_modes == 3
 
 
 def test_engine_specific_scoring_is_rejected() -> None:

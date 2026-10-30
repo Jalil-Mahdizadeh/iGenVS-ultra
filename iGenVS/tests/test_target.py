@@ -8,7 +8,9 @@ from rdkit import Chem
 from rdkit.Geometry import Point3D
 
 from igenvs.errors import InputError
-from igenvs.target import _autodock_grid_geometry, load_target, prepare_target
+from igenvs.target import (
+    _autodock_grid_geometry, _read_pdb, _reference_coordinates, load_target, prepare_target,
+)
 
 
 def _pdb_atom(
@@ -164,6 +166,38 @@ def test_short_ligand_id_must_be_unique(tmp_path: Path) -> None:
             ligand_id="LIG",
             output_dir=tmp_path / "target",
         )
+
+
+def test_box_preserves_repeated_atom_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    complex_pdb = tmp_path / "repeated-names.pdb"
+    ligand_atoms = [
+        _pdb_atom(2, "C", "LIG", "A", 2, (10, 20, 30), record="HETATM"),
+        _pdb_atom(3, "C", "LIG", "A", 2, (20, 30, 40), record="HETATM"),
+        _pdb_atom(4, "C", "LIG", "A", 2, (15, 25, 35), record="HETATM"),
+        _pdb_atom(5, "N", "LIG", "A", 2, (12, 22, 32), record="HETATM", element="N"),
+        _pdb_atom(6, "H", "LIG", "A", 2, (100, 100, 100), record="HETATM", element="H"),
+    ]
+    complex_pdb.write_text("\n".join([
+        _pdb_atom(1, "CA", "ALA", "A", 1, (0, 0, 0)), *ligand_atoms, "END",
+    ]))
+    monkeypatch.setattr("igenvs.target.prepare_receptor", _fake_receptor_preparation)
+    monkeypatch.setattr("igenvs.target.run_autogrid", _fake_autogrid)
+    target = prepare_target(complex_pdb=complex_pdb, ligand_id="A:LIG:2", padding=5,
+                            output_dir=tmp_path / "target")
+    assert target.center == (15, 25, 35)
+    assert target.size == (20, 20, 20)
+    assert json.loads(target.pocket.read_text())["reference_heavy_atoms"] == 4
+
+
+def test_reference_atoms_still_resolve_explicit_altlocs_per_residue(tmp_path: Path) -> None:
+    first = _pdb_atom(1, "C1", "LIG", "A", 1, (1, 2, 3), record="HETATM")
+    alternate = _pdb_atom(2, "C1", "LIG", "A", 1, (30, 40, 50), record="HETATM")
+    other = _pdb_atom(3, "C1", "LIG", "B", 1, (4, 5, 6), record="HETATM")
+    path = tmp_path / "altloc.pdb"
+    path.write_text("\n".join([first[:16] + "A" + first[17:],
+                                alternate[:16] + "B" + alternate[17:], other]))
+    _, atoms = _read_pdb(path)
+    assert _reference_coordinates(atoms) == [(1, 2, 3), (4, 5, 6)]
 
 
 def test_prepare_target_from_aligned_sdf(

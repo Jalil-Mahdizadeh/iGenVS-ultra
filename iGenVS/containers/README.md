@@ -9,8 +9,20 @@ iGenVS has two reproducible, architecture-specific container paths:
 
 Both use CUDA 12.8, PyTorch 2.11.0 cu128, all four iGen3 checkpoints,
 Uni-Dock 1.2.0, AutoDock-GPU 1.6, and AutoGrid 4.2.9. The build applies the same
-two recorded Uni-Dock patches and leaves AutoDock-GPU's search and scoring
+three recorded Uni-Dock patches and leaves AutoDock-GPU's search and scoring
 source unmodified.
+
+The `ring-closure-and-poses` patch carries macrocycle closure restraints into
+GPU search, maps closure atoms to the correct receptor grids, resets dummy-atom
+forces during refinement, and corrects closure-atom radii. Closure restraints
+remain active beyond the ordinary nonbonded cutoff. Flexible rings receive
+additional refinement steps; multi-pose searches retain spare candidates before
+writing the requested count. Ring torsions remain flexible.
+
+Run the real GPU regression in the rebuilt image with `IGENVS_RUN_GPU_TESTS=1`
+and `python3 -m pytest tests/test_unidock_ring_regression.py`. It checks three
+poses for rings of 6–33 atoms and a molecule with two closures, using three
+seeds/search modes. Normal test runs skip this GPU-only regression.
 
 ## Source integrity
 

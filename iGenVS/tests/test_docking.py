@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from dataclasses import replace
 
 from igenvs.docking import (
     DockingConfig,
+    _collect_outputs,
     build_unidock_command,
     expected_output_path,
     parse_pdbqt_scores,
@@ -53,7 +55,27 @@ def test_command_contains_batch_and_memory_controls(tmp_path: Path) -> None:
     assert command[command.index("--max_gpu_memory") + 1] == "4096"
     assert command[command.index("--refine_step") + 1] == "3"
     assert command[command.index("--verbosity") + 1] == "0"
+    assert command[command.index("--energy_range") + 1] == "inf"
+    assert command[command.index("--min_rmsd") + 1] == "0"
     assert expected_output_path(ligand, tmp_path) == tmp_path / "ligand_out.pdbqt"
+
+
+def test_short_pose_output_is_not_reported_as_success(tmp_path: Path) -> None:
+    ligand = _ligand(tmp_path)
+    output = expected_output_path(ligand, tmp_path)
+    output.write_text("MODEL 1\nREMARK VINA RESULT: -7.5 0 0\nENDMDL\n")
+    results, missing = _collect_outputs([ligand], output_dir=tmp_path, seconds=1, num_modes=3)
+    assert not missing
+    assert results[0].status == "invalid_output"
+    assert "requested 3 poses" in results[0].error
+
+    output.write_text("".join(
+        f"MODEL {i}\nREMARK VINA RESULT: {score} 0 0\nENDMDL\n"
+        for i, score in enumerate((-7.5, 2.0, 12.0), 1)
+    ))
+    results, _ = _collect_outputs([ligand], output_dir=tmp_path, seconds=1, num_modes=3)
+    assert results[0].status == "success"
+    assert results[0].scores == (-7.5, 2.0, 12.0)
 
 def test_scores_only_command_and_parser(tmp_path: Path) -> None:
     ligand = _ligand(tmp_path)
@@ -70,6 +92,11 @@ def test_scores_only_command_and_parser(tmp_path: Path) -> None:
     )
     assert "--scores_only_output" in command
     assert command[command.index("--score_file") + 1] == str(score_path)
+    multiple = build_unidock_command(
+        [ligand], config=replace(config, num_modes=3),
+        index_path=tmp_path / "index.txt", output_dir=tmp_path / "out",
+    )
+    assert "--scores_only_output" not in multiple  # compact table only retains one score
 
     score_path.write_text(
         f"{ligand.path.resolve()}\t-7.125\n/another/ligand.pdbqt\tnan\n",

@@ -310,12 +310,21 @@ apptainer exec --nv containers/iGenVS.SIF igenvs screen \
   --output-dir outputs/fast-scores
 ```
 
-`--pose-output none` uses the patched compact Uni-Dock score table. It preserves
+`--pose-output none --num-modes 1` uses the patched compact Uni-Dock score table. It preserves
 the same search, rescoring, and refinement as pose output while avoiding pose-file
 serialization and parsing. `--no-refine` is a separate, lower-fidelity option and
 is never enabled automatically.
+For multiple requested poses, temporary PDBQT models provide every pose score
+and are removed with the batch scratch files; no coordinates are persisted.
 
 ## Output contract
+
+For Uni-Dock pose output, `--num-modes` is the requested number of poses per
+successfully docked molecule. Energy-window and RMSD-similarity filters are
+disabled (the legacy `--energy-range` option is ignored). Every saved pose must
+retain its prepared ring closure geometry; incomplete counts and broken rings
+are reported as `invalid_output`, rather than exported with a reduced count.
+Rebuild the runtime image after updating the engine patches.
 
 Each run directory contains:
 
@@ -324,9 +333,21 @@ Each run directory contains:
 | `manifest.json` | Configuration, hardware, target/receptor hashes, timing, counts, and terminal status. |
 | `validation/validated.csv` | Canonical RDKit-valid unique molecules. |
 | `validation/rejected.csv` | Typed invalid, fragment, duplicate-ID, and duplicate-SMILES failures. |
-| `results.csv` | One terminal preparation/docking status per admitted molecule. |
+| `results.csv` | One row per pose, with its `pose_rank` and `docking_score`; one row for each preparation/docking failure. |
 | `poses.pdbqt` | Optional merged pose stream with `REMARK IGENVS MOLECULE_ID` boundaries. |
 | `logs/` | iGen3 and selected-engine stdout/stderr. |
+
+Pose ranks start at 1 within each molecule and match the saved model order.
+`num_poses` repeats the total pose count for that molecule. `pose_ref` locates
+the ligand's pose file or merged block; `pose_rank` identifies the model within
+it. Failed molecules have blank rank/score and `num_poses=0`. Manifest counts
+continue to count molecules, so four successful molecules with three poses
+produce 12 CSV rows and a `docked` count of 4.
+
+AutoDock-GPU supports the same `--num-modes` count. It selects run results by
+AD4 binding energy with clustering disabled, and matches each score to that
+run's coordinates. Default run counts are increased when necessary to supply
+the requested poses; an explicit `--adgpu-runs` must be at least the pose count.
 
 Missing outputs, parse errors, and non-finite scores never become numeric
 docking scores. Missing ligands are retried once in split batches to isolate a

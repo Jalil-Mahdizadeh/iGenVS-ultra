@@ -117,12 +117,13 @@ def _add_pocket_arguments(parser: argparse.ArgumentParser) -> None:
         default="auto",
         help="auto selects Vina for Uni-Dock and AD4 for AutoDock-GPU.",
     )
-    parser.add_argument("--num-modes", type=_positive_int, default=1)
+    parser.add_argument("--num-modes", type=_positive_int, default=1,
+                        help="Requested poses per molecule, without energy or RMSD filtering.")
     parser.add_argument(
         "--energy-range",
         type=float,
         default=3.0,
-        help="Uni-Dock only: output energy window.",
+        help="Legacy option; ignored. Requested poses are saved without an energy cutoff.",
     )
     parser.add_argument(
         "--refine-step",
@@ -376,8 +377,10 @@ def _validate_engine_arguments(args: argparse.Namespace, grid: Path | None) -> N
                 "AutoDock-GPU requires AD4 maps: use a new --target bundle or "
                 "provide --adgpu-grid in expert mode"
             )
-        if args.num_modes != 1:
-            raise InputError("AutoDock-GPU currently emits exactly one best pose")
+        if not 1 <= args.num_modes <= 8192:
+            raise InputError("AutoDock-GPU pose count must be between 1 and 8192")
+        if args.adgpu_runs is not None and args.adgpu_runs < args.num_modes:
+            raise InputError("AutoDock-GPU runs must be at least the requested pose count")
         if args.no_refine:
             raise InputError("--no-refine is a Uni-Dock-only option")
         if args.energy_range != 3.0 or args.refine_step != 3:
