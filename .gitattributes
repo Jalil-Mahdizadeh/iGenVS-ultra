@@ -20,3 +20,6 @@
 # upstream formatting predates this repository's whitespace policy.
 /iGenVS/third_party/** -text -whitespace
 /iGenVS/iGen3/legacy/** -text -whitespace
+
+# Unified patches require a space prefix on blank context lines.
+/iGenVS/containers/patches/*.patch whitespace=-blank-at-eol
